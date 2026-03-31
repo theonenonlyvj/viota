@@ -42,7 +42,7 @@ export function solveWilds(wilds: Card[], lines: Card[][]): WildAssignment[] | n
           if (card.kind === 'regular') return card
           const wi = wilds.indexOf(card)
           const a = assignments[wi]
-          if (!a) return card as RegularCard // shouldn't happen
+          if (!a) return card as unknown as RegularCard // shouldn't happen
           return { kind: 'regular' as const, ...a }
         })
         if (!isValidLine(resolved)) return null
