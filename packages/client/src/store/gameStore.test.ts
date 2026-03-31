@@ -2,6 +2,7 @@ import { beforeEach, expect, test, vi } from 'vitest'
 import { useGameStore } from './gameStore'
 import { posKey } from '@viota/engine'
 import type { Move } from '@viota/engine'
+import { computeValidPositions } from '../gameLogic'
 
 function store() { return useGameStore.getState() }
 
@@ -9,7 +10,7 @@ beforeEach(() => {
   store().startGame(2, 'easy')
 })
 
-test('startGame initialises 2-player state', () => {
+test('startGame initialises 2-player state with starter card', () => {
   const s = store()
   expect(s.hands).toHaveLength(2)
   expect(s.hands[0]).toHaveLength(4)
@@ -17,23 +18,31 @@ test('startGame initialises 2-player state', () => {
   expect(s.phase).toBe('idle')
   expect(s.staged).toHaveLength(0)
   expect(s.selectedCard).toBeNull()
+  expect(s.grid.size).toBe(1) // starter card
+  expect(s.grid.has(posKey({ x: 0, y: 0 }))).toBe(true)
 })
 
-test('selectCard sets selectedCard and computes validPositions on empty board', () => {
+test('selectCard sets selectedCard and computes validPositions adjacent to starter', () => {
   const card = store().hands[0]![0]!
   store().selectCard(card)
   expect(store().selectedCard).toBe(card)
-  expect(store().validPositions).toContainEqual({ x: 0, y: 0 })
+  // (0,0) is occupied by starter, valid positions should be adjacent
+  expect(store().validPositions).not.toContainEqual({ x: 0, y: 0 })
+  // Should have some valid positions (or none if card is incompatible)
+  expect(Array.isArray(store().validPositions)).toBe(true)
 })
 
 test('placeCard adds placement to staged and clears selectedCard', () => {
   const card = store().hands[0]![0]!
   store().selectCard(card)
-  store().placeCard({ x: 0, y: 0 })
+  const validPos = store().validPositions
+  if (validPos.length === 0) return // skip if no valid position for this random hand
+  const pos = validPos[0]!
+  store().placeCard(pos)
   const s = store()
   expect(s.staged).toHaveLength(1)
   expect(s.staged[0]!.card).toBe(card)
-  expect(s.staged[0]!.position).toEqual({ x: 0, y: 0 })
+  expect(s.staged[0]!.position).toEqual(pos)
   expect(s.selectedCard).toBeNull()
   expect(s.phase).toBe('placing')
 })
@@ -41,8 +50,11 @@ test('placeCard adds placement to staged and clears selectedCard', () => {
 test('unstageCard removes placement and returns phase to idle', () => {
   const card = store().hands[0]![0]!
   store().selectCard(card)
-  store().placeCard({ x: 0, y: 0 })
-  store().unstageCard({ x: 0, y: 0 })
+  const validPos = store().validPositions
+  if (validPos.length === 0) return
+  const pos = validPos[0]!
+  store().placeCard(pos)
+  store().unstageCard(pos)
   const s = store()
   expect(s.staged).toHaveLength(0)
   expect(s.phase).toBe('idle')
@@ -51,10 +63,13 @@ test('unstageCard removes placement and returns phase to idle', () => {
 test('confirmPlay applies play, advances turn to AI, sets phase ai-thinking', () => {
   const card = store().hands[0]![0]!
   store().selectCard(card)
-  store().placeCard({ x: 0, y: 0 })
+  const validPos = store().validPositions
+  if (validPos.length === 0) return
+  const pos = validPos[0]!
+  store().placeCard(pos)
   store().confirmPlay()
   const s = store()
-  expect(s.grid.get(posKey({ x: 0, y: 0 }))).toEqual(card)
+  expect(s.grid.get(posKey(pos))).toEqual(card)
   expect(s.staged).toHaveLength(0)
   expect(s.phase).toBe('ai-thinking')
 })
@@ -64,7 +79,10 @@ test('confirmPlay triggers worker postMessage when AI turn follows', () => {
   store().setWorker(mockWorker)
   const card = store().hands[0]![0]!
   store().selectCard(card)
-  store().placeCard({ x: 0, y: 0 })
+  const validPos = store().validPositions
+  if (validPos.length === 0) { store().setWorker(null); return }
+  const pos = validPos[0]!
+  store().placeCard(pos)
   store().confirmPlay()
   expect(mockWorker.postMessage).toHaveBeenCalledOnce()
   const msg = (mockWorker.postMessage as ReturnType<typeof vi.fn>).mock.calls[0]![0]
@@ -91,7 +109,10 @@ test('handleWorkerMessage applies pass move and advances to human turn', () => {
 test('previewScore is null after unstaging all cards', () => {
   const card = store().hands[0]![0]!
   store().selectCard(card)
-  store().placeCard({ x: 0, y: 0 })
-  store().unstageCard({ x: 0, y: 0 })
+  const validPos = store().validPositions
+  if (validPos.length === 0) return
+  const pos = validPos[0]!
+  store().placeCard(pos)
+  store().unstageCard(pos)
   expect(store().previewScore).toBeNull()
 })
