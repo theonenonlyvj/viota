@@ -13,14 +13,14 @@ describe('initGame', () => {
     expect(state.hands[1]).toHaveLength(4)
   })
 
-  it('sets draw pile to 66 - (playerCount * 4) cards', () => {
-    expect(initGame(2).drawPile).toHaveLength(58)
-    expect(initGame(4).drawPile).toHaveLength(50)
+  it('sets draw pile to 66 - 1 (starter) - (playerCount * 4) cards', () => {
+    expect(initGame(2).drawPile).toHaveLength(57)
+    expect(initGame(4).drawPile).toHaveLength(49)
   })
 
-  it('starts with empty grid and zero scores', () => {
+  it('starts with starter card on grid and zero scores', () => {
     const state = initGame(3)
-    expect(state.grid.size).toBe(0)
+    expect(state.grid.size).toBe(1) // starter card at (0,0)
     expect(state.scores).toEqual([0, 0, 0])
     expect(state.turnIndex).toBe(0)
   })

@@ -26,18 +26,27 @@ function handContains(hand: Card[], need: Card[]): boolean {
 export function initGame(playerCount: number): GameState {
   if (playerCount < 2 || playerCount > 4) throw new Error('playerCount must be 2–4')
   const deck = shuffle(createDeck())
-  const hands: Card[][] = []
   let pile = [...deck]
+
+  // Deal starter card from the top of the deck onto the center of the board
+  const starterCard = pile.shift()!
+  const grid: GameState['grid'] = new Map()
+  grid.set(posKey({ x: 0, y: 0 }), starterCard)
+
+  // Track starter if it's a regular card
+  const playedCards: RegularCard[] = starterCard.kind === 'regular' ? [starterCard] : []
+
+  const hands: Card[][] = []
   for (let i = 0; i < playerCount; i++) {
     hands.push(pile.splice(0, 4))
   }
   return {
-    grid: new Map(),
+    grid,
     hands,
     drawPile: pile,
     scores: Array.from({ length: playerCount }, () => 0),
     turnIndex: 0,
-    playedCards: [],
+    playedCards,
   }
 }
 
