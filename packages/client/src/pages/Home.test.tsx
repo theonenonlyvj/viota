@@ -30,7 +30,7 @@ test('renders opponent count buttons 1, 2, 3', () => {
 
 test('renders Easy and Expert difficulty buttons', () => {
   render(<MemoryRouter><Home /></MemoryRouter>)
-  expect(screen.getByRole('button', { name: 'Easy' })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: 'RickBot (nOt OpTiMiZiNg FoR PoInTs)' })).toBeInTheDocument()
   expect(screen.getByRole('button', { name: 'Expert' })).toBeInTheDocument()
 })
 
