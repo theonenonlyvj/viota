@@ -43,7 +43,7 @@ export default function Home() {
           <div style={btnGroup}>
             {(['easy', 'expert'] as const).map(d => (
               <button key={d} style={btnStyle(difficulty === d)} onClick={() => setDifficulty(d)}>
-                {d === 'easy' ? 'Easy' : 'Expert'}
+                {d === 'easy' ? 'RickBot (nOt OpTiMiZiNg FoR PoInTs)' : 'Expert'}
               </button>
             ))}
           </div>
