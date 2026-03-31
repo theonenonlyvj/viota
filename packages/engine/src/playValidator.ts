@@ -1,4 +1,4 @@
-import type { Grid, Placement, PlayResult, Card } from './types'
+import type { Grid, Placement, PlayResult, Card, RegularCard } from './types'
 import { posKey, getSegment, getMaximalSegments } from './grid'
 import { isValidLine, solveWilds } from './lineValidator'
 
@@ -63,15 +63,35 @@ export function validatePlay(grid: Grid, placements: Placement[]): PlayResult {
     }
   }
 
-  // Check each segment — use Wild CSP if any wilds present
+  // Validate line constraints
+  // - No-wild segments: validate directly
+  // - Wild-containing segments: collect ALL wilds by reference, solve JOINTLY across all segments
+  const noWildSegs: Card[][] = []
+  const wildSegs: Card[][] = []
   for (const seg of affectedSegments) {
-    const wilds = seg.filter(c => c.kind === 'wild')
-    if (wilds.length === 0) {
-      if (!isValidLine(seg as any)) return { valid: false, error: 'Invalid line formed' }
+    if (seg.some(c => c.kind === 'wild')) {
+      wildSegs.push(seg)
     } else {
-      const assignment = solveWilds(wilds, [seg])
-      if (!assignment) return { valid: false, error: 'No valid Wild assignment exists for this placement' }
+      noWildSegs.push(seg)
     }
+  }
+
+  for (const seg of noWildSegs) {
+    if (!isValidLine(seg as RegularCard[])) return { valid: false, error: 'Invalid line formed' }
+  }
+
+  if (wildSegs.length > 0) {
+    // Collect unique wilds by object reference
+    const wildSet = new Set<Card>()
+    for (const seg of wildSegs) {
+      for (const card of seg) {
+        if (card.kind === 'wild') wildSet.add(card)
+      }
+    }
+    const allWilds = [...wildSet]
+    // Solve ALL wild-containing segments jointly — ensures cross-line consistency
+    const assignment = solveWilds(allWilds, wildSegs)
+    if (!assignment) return { valid: false, error: 'No valid Wild assignment exists for this placement' }
   }
 
   return { valid: true }
