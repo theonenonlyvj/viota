@@ -135,6 +135,35 @@ describe('validatePlay', () => {
     expect(validatePlay(gridWithout, pl).valid).toBe(false)
   })
 
+  it('rejects placement that extends a column through a wild when the wild row has no valid assignment', () => {
+    // Reproduces bug from screenshot: wild at (1,3) is in Row 3 which has numbers 3,1,3
+    // among the regular cards — no wild assignment can make that valid.
+    // Placing B,△,1 at (1,2) and G,■,2 at (1,1) extends Column 1 through the wild.
+    // The validator must check the wild's OTHER line (Row 3), not just Column 1.
+    const wild: Card = { kind: 'wild' }
+    const grid = makeGrid([
+      // Row 4
+      [2, 4, R('blue','plus',2)], [3, 4, R('yellow','plus',3)],
+      // Row 3 (wild + 3 regulars)
+      [2, 3, R('red','plus',3)], [3, 3, R('yellow','triangle',1)], [4, 3, R('green','circle',3)],
+      // Row 2 (partial)
+      [3, 2, R('yellow','square',2)], [4, 2, R('blue','square',3)],
+    ])
+    // Place the wild on the grid at (1,3)
+    grid.set('1,3', wild)
+
+    // Now try to place B,△,1 at (1,2) and G,■,2 at (1,1)
+    const pl: Placement[] = [
+      { card: R('blue','triangle',1), position: { x: 1, y: 2 } },
+      { card: R('green','square',2), position: { x: 1, y: 1 } },
+    ]
+    // Column 1 alone would be valid (wild can be e.g. R,+,3),
+    // but Row 3 (wild, R+3, Y△1, G●3) has numbers ?,3,1,3 — no valid assignment.
+    // The wild's row constraint must be checked even though Row 3 has no newly placed cards.
+    const result = validatePlay(grid, pl)
+    expect(result.valid).toBe(false)
+  })
+
   it('accepts Wild at row/col intersection when a jointly-consistent assignment exists', () => {
     // Row: (0,0)=red-circle-2, (1,0)=blue-circle-3, (2,0)=green-circle-4
     // Wild at (3,0) → row needs yellow-circle-1

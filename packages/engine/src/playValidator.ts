@@ -1,5 +1,5 @@
 import type { Grid, Placement, PlayResult, Card, RegularCard } from './types'
-import { posKey, getSegment, getMaximalSegments } from './grid'
+import { posKey, fromKey, getSegment, getMaximalSegments } from './grid'
 import { isValidLine, solveWilds } from './lineValidator'
 
 export function validatePlay(grid: Grid, placements: Placement[]): PlayResult {
@@ -89,6 +89,25 @@ export function validatePlay(grid: Grid, placements: Placement[]): PlayResult {
       }
     }
     const allWilds = [...wildSet]
+
+    // CRITICAL: Also gather ALL other segments through each wild's position,
+    // even if they don't contain newly placed cards. The wild must satisfy
+    // every line it belongs to, not just the ones being extended this turn.
+    for (const [key, card] of tentative) {
+      if (!wildSet.has(card)) continue
+      const pos = fromKey(key)
+      for (const seg of getMaximalSegments(tentative, pos)) {
+        const segKey = seg.map(posKey).sort().join('|')
+        if (!seenSegKeys.has(segKey)) {
+          seenSegKeys.add(segKey)
+          const cards = seg.map(p => tentative.get(posKey(p))!)
+          if (cards.some(c => c.kind === 'wild')) {
+            wildSegs.push(cards)
+          }
+        }
+      }
+    }
+
     // Solve ALL wild-containing segments jointly — ensures cross-line consistency
     const assignment = solveWilds(allWilds, wildSegs)
     if (!assignment) return { valid: false, error: 'No valid Wild assignment exists for this placement' }
