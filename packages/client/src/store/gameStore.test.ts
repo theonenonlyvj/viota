@@ -1,7 +1,7 @@
 import { beforeEach, expect, test, vi } from 'vitest'
 import { useGameStore } from './gameStore'
 import { posKey } from '@viota/engine'
-import type { Move } from '@viota/engine'
+import type { Card, RegularCard, Move, Position } from '@viota/engine'
 import { computeValidPositions } from '../gameLogic'
 
 function store() { return useGameStore.getState() }
@@ -115,4 +115,76 @@ test('previewScore is null after unstaging all cards', () => {
   store().placeCard(pos)
   store().unstageCard(pos)
   expect(store().previewScore).toBeNull()
+})
+
+test('startRecycle sets recycleTarget and computes recycleValidCards', () => {
+  const s = store()
+  const wildPos: Position = { x: 1, y: 0 }
+  const newGrid = new Map(s.grid)
+  newGrid.set(posKey(wildPos), { kind: 'wild' } as Card)
+  useGameStore.setState({ grid: newGrid })
+
+  store().startRecycle(wildPos)
+  expect(store().recycleTarget).toEqual(wildPos)
+  expect(Array.isArray(store().recycleValidCards)).toBe(true)
+})
+
+test('startRecycle ignores non-wild positions', () => {
+  store().startRecycle({ x: 0, y: 0 })
+  expect(store().recycleTarget).toBeNull()
+})
+
+test('cancelRecycle clears recycleTarget', () => {
+  const s = store()
+  const wildPos: Position = { x: 1, y: 0 }
+  const newGrid = new Map(s.grid)
+  newGrid.set(posKey(wildPos), { kind: 'wild' } as Card)
+  useGameStore.setState({ grid: newGrid })
+
+  store().startRecycle(wildPos)
+  expect(store().recycleTarget).not.toBeNull()
+  store().cancelRecycle()
+  expect(store().recycleTarget).toBeNull()
+  expect(store().recycleValidCards).toEqual([])
+})
+
+test('confirmRecycle swaps wild with hand card and clears recycle state', () => {
+  const s = store()
+  const wildPos: Position = { x: 1, y: 0 }
+  const newGrid = new Map(s.grid)
+  newGrid.set(posKey(wildPos), { kind: 'wild' } as Card)
+  useGameStore.setState({ grid: newGrid })
+
+  store().startRecycle(wildPos)
+  const validCards = store().recycleValidCards
+  if (validCards.length === 0) return
+
+  const replacement = validCards[0]! as RegularCard
+  store().confirmRecycle(replacement)
+
+  expect(store().grid.get(posKey(wildPos))).toEqual(replacement)
+  expect(store().hands[0]!.some(c => c.kind === 'wild')).toBe(true)
+  expect(store().recycleTarget).toBeNull()
+  expect(store().recycleValidCards).toEqual([])
+})
+
+test('startRecycle excludes staged cards from recycleValidCards', () => {
+  const s = store()
+  const wildPos: Position = { x: 1, y: 0 }
+  const newGrid = new Map(s.grid)
+  newGrid.set(posKey(wildPos), { kind: 'wild' } as Card)
+  useGameStore.setState({ grid: newGrid })
+
+  const card = store().hands[0]![0]!
+  store().selectCard(card)
+  const validPos = store().validPositions
+  if (validPos.length > 0) {
+    store().placeCard(validPos[0]!)
+  }
+
+  store().startRecycle(wildPos)
+  const stagedCards = new Set(store().staged.map(p => p.card))
+  for (const vc of store().recycleValidCards) {
+    expect(stagedCards.has(vc)).toBe(false)
+  }
 })

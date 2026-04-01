@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { posKey, type Card, type RegularCard, type GameState, type Placement, type Position, type ScoreResult, type Difficulty, type Move } from '@viota/engine'
+import { posKey, validateWildRecycle, type Card, type RegularCard, type GameState, type Placement, type Position, type ScoreResult, type Difficulty, type Move } from '@viota/engine'
 import { initGame, applyPlay, applyPass, applyWildRecycle, computeValidPositions, computePreviewScore } from '../gameLogic'
 
 type Phase = 'idle' | 'placing' | 'ai-thinking' | 'game-over'
@@ -21,6 +21,11 @@ type GameStore = {
   validPositions: Position[]
   previewScore: ScoreResult | null
   _worker: Worker | null
+  recycleTarget: Position | null
+  recycleValidCards: Card[]
+  startRecycle(position: Position): void
+  cancelRecycle(): void
+  confirmRecycle(replacement: RegularCard): void
   startGame(playerCount: number, difficulty: Difficulty): void
   selectCard(card: Card): void
   placeCard(position: Position): void
@@ -65,6 +70,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   validPositions: [],
   previewScore: null,
   _worker: null,
+  recycleTarget: null,
+  recycleValidCards: [],
 
   startGame(playerCount, difficulty) {
     const gs = initGame(playerCount)
@@ -79,6 +86,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
       lastScoreResult: null,
       validPositions: [],
       previewScore: null,
+      recycleTarget: null,
+      recycleValidCards: [],
     })
   },
 
@@ -202,5 +211,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
         postToWorker(w, current, s.turnIndex, difficulty)
       }, 600)
     }
+  },
+
+  startRecycle(position) {
+    const { grid, hands, humanIndex, staged, turnIndex } = get()
+    if (turnIndex !== humanIndex) return
+    const card = grid.get(posKey(position))
+    if (!card || card.kind !== 'wild') return
+
+    const stagedCards = new Set(staged.map(p => p.card))
+    const hand = hands[humanIndex]!
+    const validCards = hand.filter(c => {
+      if (stagedCards.has(c)) return false
+      if (c.kind !== 'regular') return false
+      return validateWildRecycle(grid, position, c)
+    })
+
+    set({ recycleTarget: position, recycleValidCards: validCards })
+  },
+
+  cancelRecycle() {
+    set({ recycleTarget: null, recycleValidCards: [] })
+  },
+
+  confirmRecycle(replacement) {
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, recycleTarget } = get()
+    if (!recycleTarget) return
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const result = applyWildRecycle(gs, humanIndex, recycleTarget, replacement)
+    if ('error' in result) return
+    set({ ...result.newState, recycleTarget: null, recycleValidCards: [], validPositions: [], previewScore: null })
   },
 }))
