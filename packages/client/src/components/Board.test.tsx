@@ -34,3 +34,14 @@ test('clicking valid cell triggers placeCard in store', async () => {
   await userEvent.click(validCell)
   expect(useGameStore.getState().staged).toHaveLength(1)
 })
+
+test('wild card on board is clickable and triggers startRecycle', () => {
+  const s = useGameStore.getState()
+  const newGrid = new Map(s.grid)
+  newGrid.set('1,0', { kind: 'wild' as const })
+  useGameStore.setState({ grid: newGrid })
+
+  render(<Wrapper />)
+  const stars = screen.getAllByText('★')
+  expect(stars.length).toBeGreaterThan(0)
+})

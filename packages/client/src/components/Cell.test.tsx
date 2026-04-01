@@ -17,3 +17,18 @@ test('empty cell is dimmed and not interactive', () => {
   const el = container.firstChild as HTMLElement
   expect(el.style.opacity).toBe('0.3')
 })
+
+test('wild cell renders card and calls onRecycle when clicked', async () => {
+  const card = { kind: 'wild' as const }
+  const handleRecycle = vi.fn()
+  const { container } = render(<Cell variant="wild" card={card} onRecycle={handleRecycle} />)
+  await userEvent.click(container.firstChild as HTMLElement)
+  expect(handleRecycle).toHaveBeenCalledOnce()
+})
+
+test('wild-targeted cell has purple glow', () => {
+  const card = { kind: 'wild' as const }
+  render(<Cell variant="wild-targeted" card={card} />)
+  const el = screen.getByText('★').closest('div[style]') as HTMLElement
+  expect(el.style.boxShadow).toContain('#c084fc')
+})
