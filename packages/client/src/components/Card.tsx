@@ -51,13 +51,13 @@ export default function Card({ card, selected = false, glow, onClick }: Props) {
   if (card.kind === 'wild') {
     return (
       <div style={style} onClick={onClick}>
-        <div style={{
+        <span style={{
           width: 30, height: 30, borderRadius: 4,
           background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <span style={{ color: '#fff', fontSize: 15, fontWeight: 'bold' }}>★</span>
-        </div>
+        </span>
       </div>
     )
   }

@@ -41,6 +41,12 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
   const previewScore = useGameStore(s => s.previewScore)
   const placeCard = useGameStore(s => s.placeCard)
   const unstageCard = useGameStore(s => s.unstageCard)
+  const recycleTarget = useGameStore(s => s.recycleTarget)
+  const startRecycle = useGameStore(s => s.startRecycle)
+  const cancelRecycle = useGameStore(s => s.cancelRecycle)
+  const phase = useGameStore(s => s.phase)
+  const humanIndex = useGameStore(s => s.humanIndex)
+  const turnIndex = useGameStore(s => s.turnIndex)
 
   useEffect(() => {
     const el = containerRef.current
@@ -95,6 +101,10 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
 
   const onMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).dataset['testid'] === 'valid-cell') return
+    if (recycleTarget) {
+      cancelRecycle()
+      return
+    }
     dragging.current = true
     lastMouse.current = { x: e.clientX, y: e.clientY }
   }
@@ -126,7 +136,16 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
       if (stagedCard) {
         cell = <Cell variant="staged" card={stagedCard} onUnstage={() => unstageCard({ x, y })} />
       } else if (placedCard) {
-        cell = <Cell variant="placed" card={placedCard} />
+        const isWild = placedCard.kind === 'wild'
+        const isHumanTurn = turnIndex === humanIndex && (phase === 'idle' || phase === 'placing')
+        const isTargeted = recycleTarget && posKey(recycleTarget) === key
+        if (isTargeted) {
+          cell = <Cell variant="wild-targeted" card={placedCard} />
+        } else if (isWild && isHumanTurn) {
+          cell = <Cell variant="wild" card={placedCard} onRecycle={() => startRecycle({ x, y })} />
+        } else {
+          cell = <Cell variant="placed" card={placedCard} />
+        }
       } else if (isValid) {
         cell = <Cell variant="valid" onPlace={() => placeCard({ x, y })} />
       } else {
