@@ -22,13 +22,17 @@ function ShapeSvg({ card }: { card: Extract<CardType, { kind: 'regular' }> }) {
 type Props = {
   card: CardType
   selected?: boolean
+  glow?: 'purple'
   onClick?: () => void
 }
 
-export default function Card({ card, selected = false, onClick }: Props) {
-  const shadow = selected
-    ? '0 0 0 2.5px #facc15, 0 0 14px rgba(250,204,21,0.35)'
-    : '0 2px 8px rgba(0,0,0,0.4)'
+export default function Card({ card, selected = false, glow, onClick }: Props) {
+  let shadow = '0 2px 8px rgba(0,0,0,0.4)'
+  if (glow === 'purple') {
+    shadow = '0 0 0 2.5px #c084fc, 0 0 14px rgba(192,132,252,0.4)'
+  } else if (selected) {
+    shadow = '0 0 0 2.5px #facc15, 0 0 14px rgba(250,204,21,0.35)'
+  }
 
   const style: React.CSSProperties = {
     width: 56,

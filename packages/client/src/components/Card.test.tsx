@@ -29,3 +29,16 @@ test('onClick fires when card is clicked', async () => {
   await userEvent.click(container.firstChild as HTMLElement)
   expect(handleClick).toHaveBeenCalledOnce()
 })
+
+test('glow prop applies purple boxShadow', () => {
+  const card: CardType = { kind: 'regular', color: 'red', shape: 'circle', number: 2 }
+  const { container } = render(<Card card={card} glow="purple" />)
+  const el = container.firstChild as HTMLElement
+  expect(el.style.boxShadow).toContain('#c084fc')
+})
+
+test('glow prop on wild card applies purple boxShadow', () => {
+  const { container } = render(<Card card={{ kind: 'wild' }} glow="purple" />)
+  const el = container.firstChild as HTMLElement
+  expect(el.style.boxShadow).toContain('#c084fc')
+})
