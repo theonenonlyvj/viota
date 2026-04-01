@@ -27,6 +27,8 @@ export default function Game() {
   const confirmPlay = useGameStore(s => s.confirmPlay)
   const pass = useGameStore(s => s.pass)
   const startGame = useGameStore(s => s.startGame)
+  const recycleValidCards = useGameStore(s => s.recycleValidCards)
+  const confirmRecycle = useGameStore(s => s.confirmRecycle)
 
   useEffect(() => {
     const worker = new Worker(new URL('../workers/ai.worker.ts', import.meta.url), { type: 'module' })
@@ -71,6 +73,8 @@ export default function Game() {
           selectedCard={selectedCard}
           staged={staged}
           onSelectCard={selectCard}
+          recycleValidCards={recycleValidCards}
+          onConfirmRecycle={confirmRecycle}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'stretch', minWidth: 130 }}>
           <button
