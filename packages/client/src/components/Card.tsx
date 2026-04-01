@@ -14,7 +14,7 @@ function ShapeSvg({ card }: { card: Extract<CardType, { kind: 'regular' }> }) {
   if (card.shape === 'triangle')
     return <svg width="34" height="34" viewBox="0 0 32 32"><polygon points="16,4 28,28 4,28" fill={fill} stroke="#111" strokeWidth="1.5"/></svg>
   if (card.shape === 'plus')
-    return <svg width="34" height="34" viewBox="0 0 32 32"><line x1="16" y1="4" x2="16" y2="28" stroke={fill} strokeWidth="8" strokeLinecap="round"/><line x1="4" y1="16" x2="28" y2="16" stroke={fill} strokeWidth="8" strokeLinecap="round"/></svg>
+    return <svg width="34" height="34" viewBox="0 0 32 32"><line x1="16" y1="4" x2="16" y2="28" stroke={fill} strokeWidth="12" strokeLinecap="round"/><line x1="4" y1="16" x2="28" y2="16" stroke={fill} strokeWidth="12" strokeLinecap="round"/></svg>
   // square
   return <svg width="34" height="34" viewBox="0 0 32 32"><rect x="6" y="6" width="20" height="20" rx="3" fill={fill} stroke="#111" strokeWidth="1.5"/></svg>
 }
@@ -66,8 +66,8 @@ export default function Card({ card, selected = false, glow, onClick }: Props) {
     <div style={style} onClick={onClick}>
       <ShapeSvg card={card} />
       <span style={{
-        position: 'absolute', bottom: 3, right: 5,
-        fontSize: 9, fontWeight: 'bold', color: '#333',
+        position: 'absolute', bottom: 1, right: 3,
+        fontSize: 18, fontWeight: 'bold', color: '#333',
       }}>
         {card.number}
       </span>
