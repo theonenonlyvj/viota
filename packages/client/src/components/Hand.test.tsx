@@ -33,3 +33,54 @@ test('calls onSelectCard with correct card when non-staged card clicked', async 
   await userEvent.click(screen.getByText('1').closest('div')!)
   expect(handleSelect).toHaveBeenCalledWith(hand[0])
 })
+
+test('in recycle mode, valid replacement cards get purple glow', () => {
+  const validCards = [hand[0]!]
+  const { container } = render(
+    <Hand
+      hand={hand}
+      selectedCard={null}
+      staged={[]}
+      onSelectCard={vi.fn()}
+      recycleValidCards={validCards}
+      onConfirmRecycle={vi.fn()}
+    />
+  )
+  const cards = container.querySelectorAll('div[style*="box-shadow"]')
+  const purpleCards = [...cards].filter(el => (el as HTMLElement).style.boxShadow.includes('#c084fc'))
+  expect(purpleCards).toHaveLength(1)
+})
+
+test('in recycle mode, invalid cards are dimmed', () => {
+  const validCards = [hand[0]!]
+  const { container } = render(
+    <Hand
+      hand={hand}
+      selectedCard={null}
+      staged={[]}
+      onSelectCard={vi.fn()}
+      recycleValidCards={validCards}
+      onConfirmRecycle={vi.fn()}
+    />
+  )
+  const wrappers = container.querySelectorAll('[style*="opacity"]')
+  const dimmed = [...wrappers].filter(el => (el as HTMLElement).style.opacity === '0.3')
+  expect(dimmed).toHaveLength(3)
+})
+
+test('clicking valid card in recycle mode calls onConfirmRecycle', async () => {
+  const validCards = [hand[0]!]
+  const handleConfirm = vi.fn()
+  render(
+    <Hand
+      hand={hand}
+      selectedCard={null}
+      staged={[]}
+      onSelectCard={vi.fn()}
+      recycleValidCards={validCards}
+      onConfirmRecycle={handleConfirm}
+    />
+  )
+  await userEvent.click(screen.getByText('1').closest('div[style*="box-shadow"]')!)
+  expect(handleConfirm).toHaveBeenCalledWith(hand[0])
+})
