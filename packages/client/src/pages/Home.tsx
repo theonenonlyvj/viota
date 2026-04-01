@@ -60,6 +60,17 @@ export default function Home() {
       >
         Start Game
       </button>
+
+      <button
+        onClick={() => navigate('/lobby')}
+        style={{
+          background: '#7c3aed', border: 'none', color: '#fff',
+          borderRadius: 8, padding: '12px 40px', fontSize: 16,
+          fontWeight: 'bold', cursor: 'pointer',
+        }}
+      >
+        Play Online
+      </button>
     </div>
   )
 }
