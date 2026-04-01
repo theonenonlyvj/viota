@@ -8,8 +8,9 @@ export function createApp(db: Db, jwtSecret: string) {
   app.use(express.json())
 
   // POST /rooms — create a new room
-  app.post('/rooms', (_req: Request, res: Response) => {
-    const code = createRoom(db)
+  app.post('/rooms', (req: Request, res: Response) => {
+    const { disconnectTimeout } = req.body as { disconnectTimeout?: number }
+    const code = createRoom(db, disconnectTimeout != null ? { disconnectTimeout } : undefined)
     res.status(201).json({ code })
   })
 

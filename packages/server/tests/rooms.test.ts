@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import request from 'supertest'
 import { createDb } from '../src/db'
 import { createApp } from '../src/app'
+import { createRoom, getRoomByCode } from '../src/rooms'
 import type { Db } from '../src/db'
 
 const SECRET = 'test-secret'
@@ -25,6 +26,21 @@ describe('POST /rooms', () => {
     const r1 = await request(app).post('/rooms').expect(201)
     const r2 = await request(app).post('/rooms').expect(201)
     expect(r1.body.code).not.toBe(r2.body.code)
+  })
+})
+
+describe('createRoom disconnect_timeout', () => {
+  it('createRoom accepts custom disconnectTimeout', () => {
+    const code = createRoom(db, { disconnectTimeout: 60 })
+    const room = getRoomByCode(db, code)
+    expect(room).not.toBeNull()
+    expect(room!.disconnect_timeout).toBe(60)
+  })
+
+  it('createRoom defaults disconnectTimeout to 120', () => {
+    const code = createRoom(db)
+    const room = getRoomByCode(db, code)
+    expect(room!.disconnect_timeout).toBe(120)
   })
 })
 

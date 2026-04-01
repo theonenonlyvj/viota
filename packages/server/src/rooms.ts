@@ -1,7 +1,7 @@
 import type { Db } from './db'
 import { generateRoomCode, generateSecret } from './auth'
 
-export type RoomRow = { code: string; status: string; created_at: number }
+export type RoomRow = { code: string; status: string; disconnect_timeout: number; created_at: number }
 
 export type PlayerRow = {
   id: number
@@ -14,12 +14,13 @@ export type PlayerRow = {
   disconnected_at: number | null
 }
 
-export function createRoom(db: Db): string {
+export function createRoom(db: Db, opts?: { disconnectTimeout?: number }): string {
   let code: string
   do {
     code = generateRoomCode()
   } while (db.prepare('SELECT 1 FROM rooms WHERE code = ?').get(code))
-  db.prepare('INSERT INTO rooms (code, status, created_at) VALUES (?, ?, ?)').run(code, 'waiting', Date.now())
+  const timeout = opts?.disconnectTimeout ?? 120
+  db.prepare('INSERT INTO rooms (code, status, disconnect_timeout, created_at) VALUES (?, ?, ?, ?)').run(code, 'waiting', timeout, Date.now())
   return code
 }
 

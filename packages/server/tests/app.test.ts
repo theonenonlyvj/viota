@@ -15,6 +15,14 @@ beforeEach(() => {
 
 afterEach(() => { db.close() })
 
+describe('POST /rooms', () => {
+  it('POST /rooms accepts custom disconnectTimeout', async () => {
+    const res = await request(app).post('/rooms').send({ disconnectTimeout: 60 })
+    expect(res.status).toBe(201)
+    expect(res.body.code).toBeDefined()
+  })
+})
+
 describe('POST /auth/register', () => {
   it('creates account and returns JWT', async () => {
     const res = await request(app)

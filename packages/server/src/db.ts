@@ -18,6 +18,7 @@ export function createDb(filename: string = 'viota.db'): Db {
     CREATE TABLE IF NOT EXISTS rooms (
       code TEXT PRIMARY KEY,
       status TEXT NOT NULL DEFAULT 'waiting',
+      disconnect_timeout INTEGER NOT NULL DEFAULT 120,
       created_at INTEGER NOT NULL
     );
 
