@@ -44,3 +44,20 @@ test('zoom out button calls onZoomOut', async () => {
   await userEvent.click(screen.getByLabelText('zoom out'))
   expect(onZoomOut).toHaveBeenCalledOnce()
 })
+
+test('renders player names when provided', () => {
+  render(<TopBar {...defaultProps} playerNames={['Alice', 'Bob']} />)
+  expect(screen.getByText('Alice')).toBeInTheDocument()
+  expect(screen.getByText('Bob')).toBeInTheDocument()
+})
+
+test('renders turn timer when provided', () => {
+  render(<TopBar {...defaultProps} turnTimer={95} />)
+  expect(screen.getByText('1:35')).toBeInTheDocument()
+})
+
+test('renders connection status dot', () => {
+  const { container } = render(<TopBar {...defaultProps} connectionStatus="connected" />)
+  const dot = container.querySelector('[data-testid="connection-dot"]') as HTMLElement
+  expect(dot).toBeInTheDocument()
+})
