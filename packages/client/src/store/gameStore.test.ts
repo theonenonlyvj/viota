@@ -188,3 +188,77 @@ test('startRecycle excludes staged cards from recycleValidCards', () => {
     expect(stagedCards.has(vc)).toBe(false)
   }
 })
+
+describe('online mode', () => {
+  test('initOnline sets mode and online state', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    const s = store()
+    expect(s.mode).toBe('online')
+    expect(s.myIndex).toBe(0)
+    expect(s.humanIndex).toBe(0)
+    expect(s.playerNames).toEqual(['Alice', 'Bob'])
+    expect(s.playerCount).toBe(2)
+  })
+
+  test('applyServerState updates grid and hand from ClientView', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    const card: Card = { kind: 'regular', color: 'red', shape: 'circle', number: 2 }
+    store().applyServerState({
+      grid: [['0,0', card]],
+      myHand: [card],
+      handSizes: [1, 4],
+      drawPileCount: 50,
+      scores: [5, 3],
+      turnIndex: 0,
+      playedCards: [],
+    })
+    const s = store()
+    expect(s.grid.get('0,0')).toEqual(card)
+    expect(s.hands[0]).toEqual([card])
+    expect(s.handSizes).toEqual([1, 4])
+    expect(s.scores).toEqual([5, 3])
+    expect(s.turnIndex).toBe(0)
+    expect(s.phase).toBe('idle')
+  })
+
+  test('applyServerState sets phase to ai-thinking when not my turn', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    const card: Card = { kind: 'regular', color: 'red', shape: 'circle', number: 2 }
+    store().applyServerState({
+      grid: [['0,0', card]],
+      myHand: [card],
+      handSizes: [1, 4],
+      drawPileCount: 50,
+      scores: [0, 0],
+      turnIndex: 1,
+      playedCards: [],
+    })
+    expect(store().phase).toBe('ai-thinking')
+  })
+
+  test('setConnectionStatus updates connectionStatus', () => {
+    store().setConnectionStatus('reconnecting')
+    expect(store().connectionStatus).toBe('reconnecting')
+  })
+
+  test('handleVoteStart sets disconnectVote', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    store().handleVoteStart(1)
+    expect(store().disconnectVote).toEqual({ disconnectedPlayer: 1, votes: new Map(), totalVoters: 0 })
+  })
+
+  test('handleVoteCancelled clears disconnectVote', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    store().handleVoteStart(1)
+    store().handleVoteCancelled()
+    expect(store().disconnectVote).toBeNull()
+  })
+
+  test('handleAiTakeover sets aiTakeover info and clears vote', () => {
+    store().initOnline(0, ['Alice', 'Bob'])
+    store().handleVoteStart(1)
+    store().handleAiTakeover(1, 'expert')
+    expect(store().disconnectVote).toBeNull()
+    expect(store().aiTakeoverInfo).toEqual({ playerIndex: 1, difficulty: 'expert' })
+  })
+})
