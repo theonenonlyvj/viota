@@ -9,18 +9,25 @@ import { initGame, applyPlay, applyPass, applyWildRecycle } from './gameLoop'
 import { AIAgent } from '@viota/engine'
 import type { Placement, Card, RegularCard, Position } from '@viota/engine'
 
-const AI_FILL_IN_MS = 5 * 60 * 1000 // 5 minutes
-
 type RoomSession = {
   sockets: Map<number, WebSocket>   // playerIndex → socket
   aiTimers: Map<number, ReturnType<typeof setTimeout>>
+  disconnectTimers: Map<number, ReturnType<typeof setTimeout>>
+  votes: Map<number, Map<number, string>>  // disconnectedPlayer → (voterIndex → choice)
+  disconnectTimeout: number
 }
 
 const sessions = new Map<string, RoomSession>()
 
 function getSession(roomCode: string): RoomSession {
   if (!sessions.has(roomCode)) {
-    sessions.set(roomCode, { sockets: new Map(), aiTimers: new Map() })
+    sessions.set(roomCode, {
+      sockets: new Map(),
+      aiTimers: new Map(),
+      disconnectTimers: new Map(),
+      votes: new Map(),
+      disconnectTimeout: 120,
+    })
   }
   return sessions.get(roomCode)!
 }
@@ -86,12 +93,24 @@ export function setupWs(server: http.Server, db: Db, jwtSecret: string): void {
     }
 
     const session = getSession(roomCode)
+    session.disconnectTimeout = room.disconnect_timeout
 
     // Cancel any pending AI timer for this player (they reconnected)
     const existing = session.aiTimers.get(playerIndex)
     if (existing) {
       clearTimeout(existing)
       session.aiTimers.delete(playerIndex)
+    }
+
+    // Cancel any pending disconnect timer and active vote for this player
+    const existingDisconnectTimer = session.disconnectTimers.get(playerIndex)
+    if (existingDisconnectTimer) {
+      clearTimeout(existingDisconnectTimer)
+      session.disconnectTimers.delete(playerIndex)
+    }
+    if (session.votes.has(playerIndex)) {
+      session.votes.delete(playerIndex)
+      broadcastAll(session, { type: 'voteCancelled', playerIndex })
     }
 
     session.sockets.set(playerIndex, ws)
@@ -207,6 +226,31 @@ export function setupWs(server: http.Server, db: Db, jwtSecret: string): void {
         return
       }
 
+      if (msg.type === 'vote') {
+        const { disconnectedPlayer, choice } = msg as { disconnectedPlayer: number; choice: string }
+        const validChoices = ['wait', 'easy', 'expert']
+        if (!validChoices.includes(choice)) {
+          send(ws, { type: 'error', message: 'Invalid vote choice' })
+          return
+        }
+        const voteMap = session.votes.get(disconnectedPlayer)
+        if (!voteMap) {
+          send(ws, { type: 'error', message: 'No active vote for this player' })
+          return
+        }
+        voteMap.set(playerIndex, choice)
+        broadcastAll(session, {
+          type: 'voteUpdate',
+          disconnectedPlayer,
+          votesReceived: voteMap.size,
+          totalVoters: session.sockets.size,
+        })
+        if (voteMap.size >= session.sockets.size) {
+          tallyVotes(db, roomCode, disconnectedPlayer, session)
+        }
+        return
+      }
+
       send(ws, { type: 'error', message: `Unknown message type: ${msg.type}` })
     })
 
@@ -219,15 +263,15 @@ export function setupWs(server: http.Server, db: Db, jwtSecret: string): void {
 
         broadcastAll(session, { type: 'playerDisconnected', playerIndex })
 
-        // Start 5-minute AI fill-in timer
         const timer = setTimeout(() => {
-          session.aiTimers.delete(playerIndex)
-          triggerAiFillIn(db, roomCode, playerIndex, session)
-        }, AI_FILL_IN_MS)
+          session.disconnectTimers.delete(playerIndex)
+          session.votes.set(playerIndex, new Map())
+          broadcastAll(session, { type: 'voteStart', disconnectedPlayer: playerIndex })
+        }, session.disconnectTimeout * 1000)
 
-        session.aiTimers.set(playerIndex, timer)
+        session.disconnectTimers.set(playerIndex, timer)
       } catch {
-        // db may have closed during test teardown — ignore
+        // db may have closed during test teardown
       }
     })
   })
@@ -238,12 +282,54 @@ function computeWinner(scores: number[]): { finalScores: number[]; winnerIndex: 
   return { finalScores: scores, winnerIndex }
 }
 
-export function triggerAiFillIn(db: Db, roomCode: string, playerIndex: number, session: RoomSession): void {
+const DIFFICULTY_ORDER: Record<string, number> = { easy: 0, medium: 1, hard: 2, expert: 3 }
+
+function tallyVotes(db: Db, roomCode: string, disconnectedPlayer: number, session: RoomSession): void {
+  const voteMap = session.votes.get(disconnectedPlayer)
+  if (!voteMap) return
+
+  const counts: Record<string, number> = {}
+  for (const choice of voteMap.values()) {
+    counts[choice] = (counts[choice] ?? 0) + 1
+  }
+
+  const waitCount = counts['wait'] ?? 0
+  const aiChoices = Object.entries(counts).filter(([k]) => k !== 'wait')
+  const totalAi = aiChoices.reduce((sum, [, c]) => sum + c, 0)
+
+  if (waitCount >= totalAi) {
+    session.votes.delete(disconnectedPlayer)
+    const timer = setTimeout(() => {
+      session.disconnectTimers.delete(disconnectedPlayer)
+      session.votes.set(disconnectedPlayer, new Map())
+      broadcastAll(session, { type: 'voteStart', disconnectedPlayer })
+    }, session.disconnectTimeout * 1000)
+    session.disconnectTimers.set(disconnectedPlayer, timer)
+    broadcastAll(session, { type: 'voteResult', disconnectedPlayer, result: 'wait' })
+    return
+  }
+
+  let bestDifficulty = aiChoices[0]![0]
+  let bestOrder = DIFFICULTY_ORDER[bestDifficulty] ?? 0
+  for (const [diff] of aiChoices) {
+    const order = DIFFICULTY_ORDER[diff] ?? 0
+    if (order > bestOrder || (order === bestOrder && (counts[diff] ?? 0) > (counts[bestDifficulty] ?? 0))) {
+      bestDifficulty = diff
+      bestOrder = order
+    }
+  }
+
+  session.votes.delete(disconnectedPlayer)
+  broadcastAll(session, { type: 'aiTakeover', playerIndex: disconnectedPlayer, difficulty: bestDifficulty })
+  triggerAiFillIn(db, roomCode, disconnectedPlayer, session, bestDifficulty as any)
+}
+
+export function triggerAiFillIn(db: Db, roomCode: string, playerIndex: number, session: RoomSession, difficulty: 'easy' | 'medium' | 'hard' | 'expert' = 'medium'): void {
   const state = loadState(db, roomCode)
   if (!state) return
   if (state.turnIndex !== playerIndex) return // turn moved on already
 
-  const aiMove = AIAgent('medium')(state, playerIndex)
+  const aiMove = AIAgent(difficulty)(state, playerIndex)
 
   let result: ReturnType<typeof applyPlay> | ReturnType<typeof applyPass>
   if (aiMove.type === 'play') {
