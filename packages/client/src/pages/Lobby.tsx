@@ -14,44 +14,52 @@ export default function Lobby() {
   async function handleCreate() {
     if (!name.trim()) { setError('Name is required'); return }
     setError('')
-    const createRes = await fetch(`${SERVER_URL}/rooms`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
-    })
-    if (!createRes.ok) { setError('Failed to create room'); return }
-    const { code } = await createRes.json()
-    const joinRes = await fetch(`${SERVER_URL}/rooms/${code}/join`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    })
-    if (!joinRes.ok) { setError('Failed to join room'); return }
-    const { token, playerIndex } = await joinRes.json()
-    sessionStorage.setItem('viota_token', token)
-    sessionStorage.setItem('viota_room', code)
-    sessionStorage.setItem('viota_name', name.trim())
-    sessionStorage.setItem('viota_playerIndex', String(playerIndex))
-    navigate(`/lobby/${code}`)
+    try {
+      const createRes = await fetch(`${SERVER_URL}/rooms`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+      })
+      if (!createRes.ok) { setError('Failed to create room'); return }
+      const { code } = await createRes.json()
+      const joinRes = await fetch(`${SERVER_URL}/rooms/${code}/join`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      if (!joinRes.ok) { setError('Failed to join room'); return }
+      const { token, playerIndex } = await joinRes.json()
+      sessionStorage.setItem('viota_token', token)
+      sessionStorage.setItem('viota_room', code)
+      sessionStorage.setItem('viota_name', name.trim())
+      sessionStorage.setItem('viota_playerIndex', String(playerIndex))
+      navigate(`/lobby/${code}`)
+    } catch (e) {
+      setError(`Cannot reach server at ${SERVER_URL}`)
+    }
   }
 
   async function handleJoin() {
     if (!name.trim()) { setError('Name is required'); return }
     if (!roomCode.trim()) { setError('Room code is required'); return }
     setError('')
-    const code = roomCode.trim().toUpperCase()
-    const joinRes = await fetch(`${SERVER_URL}/rooms/${code}/join`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() }),
-    })
-    if (!joinRes.ok) {
-      const body = await joinRes.json().catch(() => ({}))
-      setError(body.error ?? 'Failed to join room')
-      return
+    try {
+      const code = roomCode.trim().toUpperCase()
+      const joinRes = await fetch(`${SERVER_URL}/rooms/${code}/join`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      if (!joinRes.ok) {
+        const body = await joinRes.json().catch(() => ({}))
+        setError(body.error ?? 'Failed to join room')
+        return
+      }
+      const { token, playerIndex } = await joinRes.json()
+      sessionStorage.setItem('viota_token', token)
+      sessionStorage.setItem('viota_room', code)
+      sessionStorage.setItem('viota_name', name.trim())
+      sessionStorage.setItem('viota_playerIndex', String(playerIndex))
+      navigate(`/lobby/${code}`)
+    } catch (e) {
+      setError(`Cannot reach server at ${SERVER_URL}`)
     }
-    const { token, playerIndex } = await joinRes.json()
-    sessionStorage.setItem('viota_token', token)
-    sessionStorage.setItem('viota_room', code)
-    sessionStorage.setItem('viota_name', name.trim())
-    sessionStorage.setItem('viota_playerIndex', String(playerIndex))
-    navigate(`/lobby/${code}`)
   }
 
   const inputStyle: React.CSSProperties = {
