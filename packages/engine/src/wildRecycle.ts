@@ -1,6 +1,6 @@
 import type { Grid, Position, RegularCard } from './types'
-import { posKey, getMaximalSegments } from './grid'
-import { isValidLine } from './lineValidator'
+import { posKey } from './grid'
+import { wildLinesConsistent } from './lineValidator'
 
 export function validateWildRecycle(
   grid: Grid,
@@ -14,13 +14,9 @@ export function validateWildRecycle(
   const tentative: Grid = new Map(grid)
   tentative.set(posKey(wildPosition), replacement)
 
-  // Check all lines through the wild position
-  for (const seg of getMaximalSegments(tentative, wildPosition)) {
-    const cards = seg.map(p => tentative.get(posKey(p))!)
-    // After replacement all cards in segment are RegularCards
-    if (cards.some(c => c.kind === 'wild')) return false // other wilds — not handled here
-    if (!isValidLine(cards as RegularCard[])) return false
-  }
-
-  return true
+  // Every line through the recycled position must stay valid. If another wild
+  // shares one of those lines, it must have a consistent assignment — the
+  // transitive closure handles that (rules: the replacement must fit any and
+  // all line(s) the wild was part of).
+  return wildLinesConsistent(tentative, [wildPosition])
 }

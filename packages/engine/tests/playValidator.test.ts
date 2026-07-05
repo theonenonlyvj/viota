@@ -180,4 +180,47 @@ describe('validatePlay', () => {
     ]
     expect(validatePlay(gridSetup, pl).valid).toBe(true)
   })
+
+  // --- Chained-wild (two wilds, one hop apart) — the transitive-closure cases ---
+
+  it('rejects a play whose only inconsistency is a SECOND wild one hop away (false-accept bug)', () => {
+    // Wild A at (0,0). A's row will become [A, R,plus,2, (Y,circle,2 played)] → forces A.shape ∈ {triangle,square}.
+    // Column through A: [A, wildB, Y,square,1]. Wild B's own row [B, G,t,1, G,t,2, G,t,4] forces B = green-triangle-3.
+    // With B=green-triangle-3 the column forces A.shape ∈ {plus,circle}. That contradicts the row → NO consistent (A,B).
+    // The validator must reach wild B transitively and reject.
+    const A: Card = { kind: 'wild' }
+    const B: Card = { kind: 'wild' }
+    const grid = makeGrid([
+      [0, 0, A],
+      [1, 0, R('red','plus',2)],       // A's row partner
+      [0, 1, B],                        // below A (column)
+      [0, 2, R('yellow','square',1)],   // column tail
+      [1, 1, R('green','triangle',1)],  // B's row → forces B = green-triangle-3
+      [2, 1, R('green','triangle',2)],
+      [3, 1, R('green','triangle',4)],
+    ])
+    const pl: Placement[] = [
+      { card: R('yellow','circle',2), position: { x: 2, y: 0 } },
+    ]
+    expect(validatePlay(grid, pl).valid).toBe(false)
+  })
+
+  it('accepts a legal play near a chained SECOND wild that has a consistent assignment (false-reject bug)', () => {
+    // Column [A, B, G,plus,1, G,plus,2] → A,B ∈ {green-plus-3, green-plus-4}. A's row [A, G,circle,1] + play (G,square,2).
+    // Row forces A = green, shape ∈ {triangle,plus}, number ∈ {3,4}; column forces A.shape = plus.
+    // A = green-plus-3, B = green-plus-4 satisfies everything → the play is LEGAL and must be accepted.
+    const A: Card = { kind: 'wild' }
+    const B: Card = { kind: 'wild' }
+    const grid = makeGrid([
+      [0, 0, A],
+      [0, 1, B],
+      [0, 2, R('green','plus',1)],
+      [0, 3, R('green','plus',2)],
+      [1, 0, R('green','circle',1)],   // A's row partner
+    ])
+    const pl: Placement[] = [
+      { card: R('green','square',2), position: { x: 2, y: 0 } },
+    ]
+    expect(validatePlay(grid, pl).valid).toBe(true)
+  })
 })

@@ -58,16 +58,25 @@ describe('isValidLine — no wilds', () => {
 })
 
 describe('solveWilds', () => {
-  it('returns null for empty lines array', () => {
-    expect(solveWilds([], [])).toBeNull()
+  it('returns an empty assignment (success) for no wilds and no lines', () => {
+    // Vacuously satisfiable: nothing to assign, nothing to violate.
+    expect(solveWilds([], [])).toEqual([])
+  })
+
+  it('validates lines even when there are no wilds — invalid line → null', () => {
+    // colors red, red, blue → not all-same, not all-different
+    expect(solveWilds([], [[card('red','circle',1), card('red','plus',2), card('blue','square',3)]])).toBeNull()
+  })
+
+  it('validates lines even when there are no wilds — valid line → success', () => {
+    expect(solveWilds([], [[card('red','circle',1), card('blue','circle',2)]])).toEqual([])
   })
 
   it('assigns wild to make a 2-card line valid', () => {
-    // wild + [red,circle,1] — any assignment works; result must be non-null
-    const result = solveWilds(
-      [{ kind: 'wild' }],
-      [[wild(), card('red','circle',1)]]
-    )
+    // wild + [red,circle,1] — any assignment works; result must be non-null.
+    // The same wild object must appear in both the wilds list and the line.
+    const w = wild()
+    const result = solveWilds([w], [[w, card('red','circle',1)]])
     expect(result).not.toBeNull()
   })
 
