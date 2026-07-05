@@ -51,4 +51,28 @@ describe('validateWildRecycle', () => {
     const grid = makeGrid([[0, 0, W()]])
     expect(validateWildRecycle(grid, { x: 0, y: 0 }, R('red','circle',1))).toBe(true)
   })
+
+  it('allows recycling a wild when ANOTHER wild remains in the same line, if a consistent assignment still exists', () => {
+    // Row: [W1(0,0), W2(1,0), red-triangle-1(2,0)]. Recycle W1 → red-triangle-2.
+    // Resulting line [red-triangle-2, W2, red-triangle-1] is valid with W2 = red-triangle-3 or -4.
+    // The rules allow it ("fits any and all lines it may be a part of"); the validator must solve the remaining wild.
+    const grid = makeGrid([
+      [0, 0, W()],
+      [1, 0, W()],
+      [2, 0, R('red','triangle',1)],
+    ])
+    expect(validateWildRecycle(grid, { x: 0, y: 0 }, R('red','triangle',2))).toBe(true)
+  })
+
+  it('rejects recycling when NO assignment of the remaining wild can satisfy the line', () => {
+    // Row: [W1(0,0), W2(1,0), red-triangle-1(2,0), red-triangle-2(3,0)].
+    // Recycle W1 → blue-triangle-4: line [blue,red,red,...] colors are 2-red-not-all-diff-not-all-same → no W2 fixes it.
+    const grid = makeGrid([
+      [0, 0, W()],
+      [1, 0, W()],
+      [2, 0, R('red','triangle',1)],
+      [3, 0, R('red','triangle',2)],
+    ])
+    expect(validateWildRecycle(grid, { x: 0, y: 0 }, R('blue','triangle',4))).toBe(false)
+  })
 })
