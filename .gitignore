@@ -1,2 +1,17 @@
 .worktrees/
 .superpowers/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+.vite/
+
+# Local database + native artifacts
+*.db
+*.db-shm
+*.db-wal
+
+# OS / editor cruft
+.DS_Store
