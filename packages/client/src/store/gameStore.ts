@@ -25,6 +25,8 @@ type GameStore = {
   scores: number[]
   turnIndex: number
   playedCards: RegularCard[]
+  consecutivePasses: number
+  finished: boolean
   playerCount: number
   difficulty: Difficulty
   humanIndex: number
@@ -95,6 +97,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   scores: [],
   turnIndex: 0,
   playedCards: [],
+  consecutivePasses: 0,
+  finished: false,
   playerCount: 2,
   difficulty: 'easy',
   humanIndex: 0,
@@ -180,7 +184,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
     if (staged.length === 0) return
-    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPlay(gs, humanIndex, staged)
     if ('error' in result) return
     const { newState, scoreResult, gameOver } = result
@@ -210,10 +214,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return
     }
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
-    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPass(gs, humanIndex, trades, tradeOrder)
     if ('error' in result) return
-    const { newState } = result
+    const { newState, gameOver } = result
+    if (gameOver) {
+      set({ ...newState, staged: [], selectedCard: null, validPositions: [], previewScore: null, phase: 'game-over' })
+      return
+    }
     const nextTurn = newState.turnIndex
     const isNextAI = nextTurn !== humanIndex
     set({
@@ -229,7 +237,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   recycleWild(wildPosition, replacement) {
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex } = get()
-    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyWildRecycle(gs, humanIndex, wildPosition, replacement)
     if ('error' in result) return
     set({ ...result.newState, validPositions: [], previewScore: null })
@@ -241,7 +249,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   handleWorkerMessage(move) {
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
-    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     let newState: GameState
     let gameOver = false
     if (move.type === 'play') {
@@ -253,6 +261,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       const result = applyPass(gs, turnIndex, move.trades, move.tradeOrder)
       if ('error' in result) return
       newState = result.newState
+      gameOver = result.gameOver
     }
     if (gameOver) {
       set({ ...newState, phase: 'game-over' })
@@ -299,7 +308,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, recycleTarget } = get()
     if (!recycleTarget) return
-    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards }
+    const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyWildRecycle(gs, humanIndex, recycleTarget, replacement)
     if ('error' in result) return
     set({ ...result.newState, recycleTarget: null, recycleValidCards: [], validPositions: [], previewScore: null })

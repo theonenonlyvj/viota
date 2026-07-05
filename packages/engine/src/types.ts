@@ -41,4 +41,6 @@ export type GameState = {
   scores: number[]
   turnIndex: number        // which player's turn (index into hands/scores)
   playedCards: RegularCard[] // all regular cards removed from draw pile so far
+  consecutivePasses?: number // passes in a row since the last play (stalemate detection); undefined = 0
+  finished?: boolean         // true once the game has ended (no further moves allowed); undefined = false
 }
