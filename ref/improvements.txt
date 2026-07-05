@@ -1,0 +1,23 @@
+Wild Card Logic doesnt work: Here are two screenshots that are both showing an illegal game board: ./ref/20260401_0115_wildcard1.png and ./ref/20260401_0115_wildcard2.png
+Recall the source of truth: ./ref/iota_rules.txt and the first order principles ./ref/viota_first_order_principles.rtf
+Ensure the wild card rule is being implemented properly.
+
+----
+1) can the previous play be loosely highlighted?
+
+show how many points each player got on their last move as a "+5" next to their updated score
+
+future plan - allow a toggle to not automatically show the user all legal moves for every card, just show all grids and if they place a card there it is returned to their hand with some sort of brief "you can't do that" kind of thing
+^rethought of this. takes away of needing to pay attention to the game
+
+also a tutorial section
+
+prettier, more responsive game board/ rotations, etc
+
+what are my potential next move(s)/ best moves
+
+min soon doesnt zoom out enough
+
+clicking on the greyed out card should return it to your hand in playing
+
+game over should tell you you won

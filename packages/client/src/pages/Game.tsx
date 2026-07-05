@@ -12,6 +12,13 @@ export default function Game() {
   const boardRef = useRef<BoardHandle>(null)
   const [showPassModal, setShowPassModal] = useState(false)
 
+  const grid = useGameStore(s => s.grid)
+
+  // Redirect to home if no game is active (e.g. page refresh)
+  useEffect(() => {
+    if (grid.size === 0) navigate('/', { replace: true })
+  }, [grid.size, navigate])
+
   const setWorker = useGameStore(s => s.setWorker)
   const handleWorkerMessage = useGameStore(s => s.handleWorkerMessage)
   const phase = useGameStore(s => s.phase)

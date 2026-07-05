@@ -1,0 +1,103 @@
+Iota Rulebook - source of truth.
+
+Rules of Play
+(2–4 players, ages 8+)
+
+Contents:
+66-card deck: 2 WILD Cards, and 64 unique cards (every possible combination of color (blue/red/yellow/green), shape (triangle/plus/square/circle), number (1/2/3/4))
+
+Object:
+Score the most points by adding cards in *lines* connected to the grid.
+
+Definition:
+A *line* consists of 2, 3, or 4 cards straight in a row or column (no diagonals), in which each individual property (color, shape and number) is *either* the same on each card *or* different on each card.
+
+Set Up:
+Get a pencil and paper for scoring.
+Shuffle and deal 4 cards face down to each player. (Look at them but keep them secret from opponents.)
+Stack the remaining cards face down to form a draw pile.
+Place the top card face up in the center of the player area to form the starter card. Notice that each card has three properties: a shape, a color, and a number.
+
+How to Play:
+The teeniest person starts the game and play moves to the left. On your turn, take one of two actions:
+On your turn you must choose one of these two actions:
+1) Add 1, 2, 3, or 4 cards in a single *line*, connecting to any card(s) already in play. All cards must follow the *GuideLines*, below. Record your score and then replenish your hand to 4 cards...
+*OR*
+2) Pass... and trade some, all, or none of your cards back to the bottom of the draw pile and take new ones.
+
+Definition:
+*GuideLines* (must all be followed)
+1) All cards played must connect in a single straight *line* and at least one must connect to the grid.
+2) Although you must play cards in a single *line*, additional *lines* may be created and/or extended as a result. (See Turn 3 on other side for example.)
+3) You may create or extend a *line* by adding cards to both ends of it. (See Turn 2.)
+4) In every *line*, all cards must be either all the same or all different in each individual property: color, shape, and number. (See 'How do you form a *line*?' below.)
+5) Cards may be played in any sequence.
+6) A 4 card *line* is called a *lot*. Creating one doubles your score for the turn. Example: [green, triangle 2], [yellow, square, 3], [blue, circle, 4], [red, plus, 1]
+7) Maximum allowable *line* length is 4 cards
+8) If there are any gaps, it's not a *line*... and some spaces on the grid will be impossible to fill.
+
+Scoring:
+After each turn, add up the face values of all the cards in each *line* either created or extended on your turn. If a card is part of 2 *lines*, it is counted twice. Double points for the *entire turn* for each *lot* completed. Double again for playing all 4 of your cards on one turn. 
+
+Ending the Game:
+The game ends when the draw pile runs out and one player plays his or her last card. Double points for that turn. *High score wins!*
+
+How do you form a line? Easy as 1 2 3:
+Since any 2 cards have some or no properties in common, *any 2 cards will work* to begin a *line*. The 3rd and 4th cards in that *line* must satisfy the requirements set by the first 2 cards. 
+Therefore, before adding the 3rd card to a *line*, look at the 3 cards that would be in that *line* and ask yourself:
+1) Are the *colors* either all the same or all different on each card?
+2) Are the *shapes* either all the same or all different on each card?
+3) Are the *numbers* either all the same or all different on each card?
+If your answer is *no* to *any* of these, then it's not an allowable move. 
+Ask yourself these same questions before adding the 4th card to create a *lot*.
+
+Wild Cards:
+A Wild card substitutes for any other card and has a face value of 0 points. You may "recycle" a Wild card already in play *prior* to starting your turn by exchanging it with a card from your hand that fits any and all *line(s)* it may be a part of.You may then replay it on any turn. You do not have to name a Wild card when you play it. However, it must represent the same card if part of *two* *lines*. 
+
+
+Page 2:
+
+Examples of *Lots*:
+Shorthand, using color (B / R/ Y/ G) and shape (t / p/ s/ c), number (1/2/3/4)
+[Y,t,2];[Y,p,2];[Y,c,2];[Y,s,2] = Same color on each card. Different shapes on each card. Same number on each card.
+[R,c,1];[R,c,3];[R,c,2];[R,c,4] = Same color on each card. Same shape on each card. Different numbers on each card.
+[G,t,2];[G,p,3];[G,c,1];[G,s,4] = Same color on each card. Different shapes on each card. Different numbers on each card.
+[G,p,2];[B,p,2];[Y,p,2];[R,p,2] = Different colors on each card. Same shape on each card. Same number on each card.
+[R,t,2];[B,p,2];[G,c,2];[Y,s,2] = Different colors on each card. Different shapes on each card. Same number on each card.
+[B,t,2];[R,t,1];[Y,t,4];[G,t,3] = Different colors on each card. Same shape on each card. Different numbers on each card.
+[Y,s,4];[R,c,3];[B,p,1];[G,t,2] = Different colors on each card. Different shapes on each card. Different numbers on each card
+
+Play Example:
+We will use a grid to represent using (col, row), where (1,1) is the bottom left position and (4,4) is the top right position.
+-Turn 0: starter card
+(1, 3) = [R,t,2]
+-Turn 1: 2 cards are played. Same number, different colors, different shapes. 6 points.
+(1, 3) = [R,t,2]
++(2, 3) = [B,p,2]
++(3, 3) = [G,c,2]
+-Turn 2: 2 cards are played creating a new 3 card *line*. Same shape, different colors, different numbers. Cards must be played in a single *line*, though they needn‘t touch. 6 points
+(1, 3) = [R,t,2]
+(2, 3) = [B,p,2]
+(3, 3) = [G,c,2]
++(3,4) = [R,c,3]
++(3,2) = [Y,c,1]
+-Turn 3: 2 cards are played. The yellow square 2 completes a *lot*. 2 new *lines* of 2 cards each are also created. 12 points for the 2 lines across (8+4). 5 points for the *line* up/down. Double for the *lot*. 34 points
+(1, 3) = [R,t,2]
+(2, 3) = [B,p,2]
+(3, 3) = [G,c,2]
+(3,4) = [R,c,3]
+(3,2) = [Y,c,1]
++(4,3) = [Y,s,2]
++(4,2) = [G,t,3]
+-Turn 4: 4 cards are played completing 2 *lots*. Face value of each *lot* is 10 points. A second *line* down worth 6 points is also extended for a total of 26. Double all points for *lot* 1. Double again for *lot* 2, and double again for playing all 4 cards! 208 points.
+(1, 3) = [R,t,2]
+(2, 3) = [B,p,2]
+(3, 3) = [G,c,2]
+(3,4) = [R,c,3]
+(3,2) = [Y,c,1]
+(4,3) = [Y,s,2]
+(4,2) = [G,t,3]
++(1,1) = [G,t,2]
++(2,1) = [Y,s,3]
++(2,1) = [B,c,4]
++(4,1) = [R,p,1]
