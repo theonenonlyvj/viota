@@ -21,8 +21,8 @@ export function deserializeGrid(json: string): Map<string, Card> {
 
 export function saveState(db: Db, roomCode: string, state: GameState): void {
   db.prepare(`
-    INSERT INTO game_states (room_code, grid_json, draw_pile_json, hands_json, scores_json, turn_index, played_cards_json, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO game_states (room_code, grid_json, draw_pile_json, hands_json, scores_json, turn_index, played_cards_json, consecutive_passes, finished, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(room_code) DO UPDATE SET
       grid_json = excluded.grid_json,
       draw_pile_json = excluded.draw_pile_json,
@@ -30,6 +30,8 @@ export function saveState(db: Db, roomCode: string, state: GameState): void {
       scores_json = excluded.scores_json,
       turn_index = excluded.turn_index,
       played_cards_json = excluded.played_cards_json,
+      consecutive_passes = excluded.consecutive_passes,
+      finished = excluded.finished,
       updated_at = excluded.updated_at
   `).run(
     roomCode,
@@ -39,13 +41,15 @@ export function saveState(db: Db, roomCode: string, state: GameState): void {
     JSON.stringify(state.scores),
     state.turnIndex,
     JSON.stringify(state.playedCards),
+    state.consecutivePasses ?? 0,
+    state.finished ? 1 : 0,
     Date.now()
   )
 }
 
 export function loadState(db: Db, roomCode: string): GameState | null {
   const row = db.prepare('SELECT * FROM game_states WHERE room_code = ?').get(roomCode) as
-    | { grid_json: string; draw_pile_json: string; hands_json: string; scores_json: string; turn_index: number; played_cards_json: string }
+    | { grid_json: string; draw_pile_json: string; hands_json: string; scores_json: string; turn_index: number; played_cards_json: string; consecutive_passes?: number; finished?: number }
     | undefined
 
   if (!row) return null
@@ -57,6 +61,8 @@ export function loadState(db: Db, roomCode: string): GameState | null {
     scores: JSON.parse(row.scores_json) as number[],
     turnIndex: row.turn_index,
     playedCards: JSON.parse(row.played_cards_json) as RegularCard[],
+    consecutivePasses: row.consecutive_passes ?? 0,
+    finished: row.finished === 1,
   }
 }
 

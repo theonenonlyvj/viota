@@ -43,9 +43,16 @@ export function createDb(filename: string = 'viota.db'): Db {
       scores_json TEXT NOT NULL,
       turn_index INTEGER NOT NULL,
       played_cards_json TEXT NOT NULL,
+      consecutive_passes INTEGER NOT NULL DEFAULT 0,
+      finished INTEGER NOT NULL DEFAULT 0,
       updated_at INTEGER NOT NULL
     );
   `)
+
+  // Additive migration for databases created before these columns existed.
+  const cols = (db.prepare('PRAGMA table_info(game_states)').all() as { name: string }[]).map(c => c.name)
+  if (!cols.includes('consecutive_passes')) db.exec('ALTER TABLE game_states ADD COLUMN consecutive_passes INTEGER NOT NULL DEFAULT 0')
+  if (!cols.includes('finished')) db.exec('ALTER TABLE game_states ADD COLUMN finished INTEGER NOT NULL DEFAULT 0')
 
   return db
 }
