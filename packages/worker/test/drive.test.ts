@@ -59,14 +59,14 @@ describe('driveIfAI', () => {
     })
   })
 
-  it('does nothing on a human seat turn (but arms a soft AFK deadline once)', async () => {
+  it('does nothing on a connected human seat turn and NEVER arms a soft auto-cover (a connected player is never replaced)', async () => {
     await runInDurableObject(stubFor('drive-human-turn'), (_i: any, state: any) => {
       const sql = state.storage.sql as SqlLike
       const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [1], presentSeats: [0], now: NOW })
-      // current seat is 0 (human, present)
+      // current seat is 0 (human, present) — no move, and no soft AFK timer armed.
       driveIfAI(deps(state), repo, sql, NOW)
       expect(repo.getMovesSince(0).length).toBe(0)
-      expect(hasTimer(sql, 'soft', 0)).toBe(true) // present idler protection
+      expect(hasTimer(sql, 'soft', 0)).toBe(false) // connected player is never auto-covered
     })
   })
 

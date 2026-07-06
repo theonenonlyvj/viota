@@ -13,5 +13,8 @@ dist/
 *.db-shm
 *.db-wal
 
+# Local wrangler secrets (never commit)
+.dev.vars
+
 # OS / editor cruft
 .DS_Store

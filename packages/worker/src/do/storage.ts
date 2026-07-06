@@ -180,8 +180,18 @@ const migrateV5: Migration = (sql) => {
   sql.exec(`ALTER TABLE meta ADD COLUMN host_seat INTEGER NOT NULL DEFAULT 0`)
 }
 
+/**
+ * v6: `meta.ai_takeover_ms` — the host-chosen patience (ms) for how long a
+ * DISCONNECTED player's seat waits on their turn before a medium AI covers it.
+ * `0` means "wait for me" (never auto-cover). Nullable: solo/legacy games leave
+ * it NULL and fall back to the fixed away-turn default. Additive ADD COLUMN.
+ */
+const migrateV6: Migration = (sql) => {
+  sql.exec(`ALTER TABLE meta ADD COLUMN ai_takeover_ms INTEGER`)
+}
+
 /** Ordered migration list. Index i is schema version (i+1). */
-export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3, migrateV4, migrateV5]
+export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3, migrateV4, migrateV5, migrateV6]
 
 /**
  * Idempotent forward migrator. Safe to run on every DO boot: creates the
@@ -218,6 +228,9 @@ export type MetaRow = {
    *  creator is seat 0, so this defaults to 0. Optional on WRITE (defaults to 0);
    *  getMeta always returns a concrete number. */
   host_seat?: number
+  /** Host-chosen AI-takeover patience (ms) for a DISCONNECTED on-turn seat; `0`
+   *  = never auto-cover; NULL = fall back to the fixed away-turn default. */
+  ai_takeover_ms?: number | null
 }
 
 export type SeatRow = {
@@ -270,13 +283,14 @@ export class GameRepository {
       game_uuid: String(r.game_uuid),
       code: r.code == null ? null : String(r.code),
       host_seat: r.host_seat == null ? 0 : Number(r.host_seat),
+      ai_takeover_ms: r.ai_takeover_ms == null ? null : Number(r.ai_takeover_ms),
     }
   }
 
   putMeta(m: MetaRow): void {
     this.sql.exec(
-      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid, code, host_seat)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid, code, host_seat, ai_takeover_ms)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          move_index = excluded.move_index,
          status = excluded.status,
@@ -285,8 +299,9 @@ export class GameRepository {
          engine_version = excluded.engine_version,
          game_uuid = excluded.game_uuid,
          code = excluded.code,
-         host_seat = excluded.host_seat`,
-      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid, m.code, m.host_seat ?? 0,
+         host_seat = excluded.host_seat,
+         ai_takeover_ms = excluded.ai_takeover_ms`,
+      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid, m.code, m.host_seat ?? 0, m.ai_takeover_ms ?? null,
     )
   }
 
