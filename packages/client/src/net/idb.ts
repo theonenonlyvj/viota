@@ -15,7 +15,12 @@ export const GHOST_STORE = 'ghost_games'
 
 export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION)
+    const idb = globalThis.indexedDB
+    if (!idb) {
+      reject(new Error('IndexedDB unavailable')) // e.g. plain jsdom — callers treat as non-fatal
+      return
+    }
+    const req = idb.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = () => {
       const db = req.result
       if (!db.objectStoreNames.contains(OUTBOX_STORE)) {
