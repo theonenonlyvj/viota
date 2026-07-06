@@ -6,6 +6,6 @@
     "build": "pnpm -r build"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "workerd", "esbuild", "sharp"]
+    "onlyBuiltDependencies": ["workerd", "esbuild", "sharp"]
   }
 }
