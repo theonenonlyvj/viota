@@ -16,12 +16,22 @@ import { applyMovePayload, type MovePayload } from './moves'
 export function replay(initialState: GameState, moves: MoveRow[]): GameState {
   const sorted = [...moves].sort((a, b) => a.move_index - b.move_index)
 
-  // A reverted move is never deleted (audit + fidelity); it is skipped on
-  // replay. The veto only ever reverts a contiguous TRAILING run per seat, so a
-  // non-reverted move must never follow a reverted one for the same seat —
-  // violating that means the log is corrupt and replay would silently diverge.
-  assertRevertedContiguousSuffix(sorted)
-
+  // A reverted move is never deleted (audit + fidelity); it is SKIPPED on replay.
+  //
+  // Reverted rows are NOT required to be a contiguous suffix. The bounded veto
+  // reverts the AI's most-recent turn on the reclaiming seat, then the returning
+  // human plays their real move at the NEXT move_index — a non-reverted row that
+  // legitimately FOLLOWS the reverted ones for that same seat. Any per-seat
+  // "reverted must be a suffix" rule would false-positive on exactly that flow.
+  //
+  // The real safety net is legality: every non-reverted move was validated at
+  // apply-time against the state produced by the non-reverted moves before it,
+  // so replaying them in order reproduces that exact state. If a row was wrongly
+  // reverted, a later move that depended on its effect fails to apply here and we
+  // throw (below); a row wrongly NOT reverted is caught by the background
+  // snapshot-vs-replay integrity check. The veto endpoint enforces its own
+  // "revert only the current trailing AI run on this seat" precondition at veto
+  // time — that is where trailing-ness is checked, not here.
   let state = initialState
   for (const m of sorted) {
     if (m.reverted) continue
@@ -33,22 +43,4 @@ export function replay(initialState: GameState, moves: MoveRow[]): GameState {
     state = applied.newState
   }
   return state
-}
-
-/**
- * Throw if the `reverted` rows do not form a contiguous suffix per affected
- * seat — i.e. once a seat has a reverted move, every later move for that seat
- * must also be reverted. (Order-independent: sorts by move_index internally.)
- */
-export function assertRevertedContiguousSuffix(moves: MoveRow[]): void {
-  const sorted = [...moves].sort((a, b) => a.move_index - b.move_index)
-  const seatSawReverted = new Set<number>()
-  for (const m of sorted) {
-    if (seatSawReverted.has(m.seat_index) && !m.reverted) {
-      throw new Error(
-        `reverted rows must form a contiguous suffix per seat: non-reverted move_index ${m.move_index} follows a reverted move for seat ${m.seat_index}`,
-      )
-    }
-    if (m.reverted) seatSawReverted.add(m.seat_index)
-  }
 }

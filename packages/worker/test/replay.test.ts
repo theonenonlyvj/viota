@@ -3,7 +3,7 @@ import { it, expect, describe } from 'vitest'
 import { runMigrations, GameRepository, type MoveRow } from '../src/do/storage'
 import { serializeState } from '../src/do/state-codec'
 import { applyMovePayload } from '../src/do/moves'
-import { replay, assertRevertedContiguousSuffix } from '../src/do/replay'
+import { replay } from '../src/do/replay'
 import { buildScriptedGame } from './helpers'
 
 function stubFor(name: string) {
@@ -93,33 +93,50 @@ describe('replay determinism (flagship)', () => {
   })
 })
 
-describe('replay skips reverted rows + enforces the contiguous-suffix invariant', () => {
-  const row = (i: number, seat: number, reverted: boolean): MoveRow => ({
-    move_index: i,
-    turn_number: i,
-    seat_index: seat,
-    type: 'pass',
-    payload: JSON.stringify({ type: 'pass', trades: [], tradeOrder: [] }),
-    score_delta: 0,
-    score_after: 0,
-    by_ai: true,
-    ai_difficulty: 'medium',
-    controlling_account_id: null,
-    client_move_id: `x-${i}`,
-    reverted,
-    created_at: i,
+describe('replay handles the veto pattern (reverted row followed by a non-reverted replacement)', () => {
+  it('skips a reverted tail move and applies the same-seat non-reverted replacement — the veto+play flow', async () => {
+    await runInDurableObject(stubFor('replay-veto'), (_i, state: any) => {
+      const sql = state.storage.sql
+      runMigrations(sql)
+      const repo = new GameRepository(sql)
+
+      const { initialState, liveSnapshot } = foldScript(repo)
+      const rows = repo.getMovesSince(0)
+      const last = rows[rows.length - 1]!
+
+      // Simulate a bounded veto of the last move, then the returning player
+      // replaying the IDENTICAL move at the next index (non-reverted). The
+      // reverted row is now FOLLOWED by a non-reverted row for the SAME seat —
+      // the exact pattern a per-seat contiguity rule would wrongly reject.
+      const revertedLast: MoveRow = { ...last, reverted: true }
+      const replacement: MoveRow = {
+        ...last,
+        move_index: last.move_index + 1,
+        reverted: false,
+        client_move_id: `replay-${last.move_index + 1}`,
+      }
+      const modified = [...rows.slice(0, -1), revertedLast, replacement]
+
+      // Must NOT throw, and must reproduce the same state (replacement == original,
+      // applied after the same prefix because the reverted row is skipped).
+      const out = replay(initialState, modified)
+      expect(serializeState(out)).toBe(serializeState(liveSnapshot))
+    })
   })
 
-  it('accepts reverted rows that form a trailing run per seat', () => {
-    // seat 1's reverted rows (5,6) are a suffix of seat 1's moves (3,5,6).
-    const moves = [row(1, 0, false), row(2, 0, false), row(3, 1, false), row(5, 1, true), row(6, 1, true)]
-    expect(() => assertRevertedContiguousSuffix(moves)).not.toThrow()
-  })
+  it('throws when skipping a reverted row makes a later non-reverted move illegal (the real safety net)', async () => {
+    await runInDurableObject(stubFor('replay-corrupt'), (_i, state: any) => {
+      const sql = state.storage.sql
+      runMigrations(sql)
+      const repo = new GameRepository(sql)
 
-  it('throws when a non-reverted row follows a reverted row for the same seat', () => {
-    const moves = [row(1, 1, false), row(2, 1, true), row(3, 1, false)]
-    expect(() => assertRevertedContiguousSuffix(moves)).toThrow(/contiguous suffix/i)
-    expect(() => replay(buildScriptedGame().initialState, moves)).toThrow(/contiguous suffix/i)
+      const { initialState } = foldScript(repo)
+      const rows = repo.getMovesSince(0)
+      // Wrongly mark move 1 reverted while leaving the rest non-reverted: a later
+      // move that depended on move 1's board change now fails engine legality.
+      const corrupt = rows.map((r) => (r.move_index === 1 ? { ...r, reverted: true } : r))
+      expect(() => replay(initialState, corrupt)).toThrow(/diverged/i)
+    })
   })
 
   it('folds only non-reverted moves through the engine', async () => {
