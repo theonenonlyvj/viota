@@ -148,3 +148,66 @@ P1 → P2 → P3 depend in order (state → moves → liveness). P4 depends on P
 
 - **Cloudflare go/no-go (Vijay).** Everything here assumes the platform decision in §0 of the spec. The Neon+Render fallback (spec §11) reuses P2's data model, P4 identity, P6 client, and P7 analytics; only the DO-specific liveness (P3) and storage (P1/P2 txn) change to the SELECT-FOR-UPDATE + advisory-lock + watchdog form.
 - Detailed per-phase TDD plans are authored JIT at each phase start (bite-sized steps + complete code) per superpowers:writing-plans, then executed via superpowers:subagent-driven-development.
+
+---
+
+# COUNCIL CORRECTIONS v1 (authoritative — override the above where they conflict)
+
+A 5-expert plan council (Cloudflare/DO platform, distributed-correctness, buildability, security + chair) reviewed this plan. **Verdict: keep the DO-per-game architecture (no fatal flaw); fold these in before writing code.** Full review: `tasks/wga66hw0i.output`.
+
+## Amended Global Constraints (replace/augment the originals)
+
+- **Atomic commit uses the SYNCHRONOUS SQLite API, not `state.storage.transaction()`.** Parse the request body first (`await request.json()`), then run read(moveIndex)→engine-validate→write{move,snapshot,meta} as ONE synchronous span via `ctx.storage.sql.exec(...)` inside `ctx.storage.transactionSync(...)` with **zero awaits** (input gates only close during a synchronous span; an await opens the gate and lets a move POST and an alarm interleave onto the same move_index). `UNIQUE(move_index)` is an **explicitly-handled** backstop: on violation, re-read meta + re-derive, or return a benign 409 → client re-syncs.
+- **Identity is threaded from Phase 1/2, not Phase 4.** Signature: `applyAndPersist(ctx, accountId, seatIndex, move, clientMoveId)`. `seats.owner_account_id` is a first-schema column. Inside the write txn, assert `seats[seatIndex].owner_account_id === accountId` before validating. Authz + redaction + bounds-validation are per-handler guarded steps co-designed with every endpoint, never a retrofit.
+- **Heartbeat (`last_seen_at` within 45s) is the SOLE presence authority** for BOTH `driveIfAI` and freeze/abandon. NEVER gate on `ctx.getWebSockets()` count (it counts hibernated sockets and disagrees with a mid-reconnect present player). Socket state decides only *who receives nudges*. Add `POST /heartbeat` to the `driveIfAI` trigger list.
+- **Secret guard is a request-time fail-closed 503**, not a module-scope throw (Workers has no boot; secret bindings exist only inside `fetch()`/the DO constructor). At the top of `fetch()` and the DO constructor: `if (!env.JWT_SECRET || knownDevDefaults.has(env.JWT_SECRET) /*constant-time*/ || byteLength(env.JWT_SECRET) < 32) return 503`. `JWT_SECRET` is a `wrangler secret put` binding, never a `[vars]` entry.
+- **`wrangler.toml` migration MUST use `new_sqlite_classes = ["GameDO"]`** (NOT `new_classes` → that requests the paid KV backend). Include explicit `[[durable_objects.bindings]]` (`GAME_DO`), `[[d1_databases]]`, `[triggers] crons = ["* * * * *"]` (1-min CF floor), and a 2025+ `compatibility_date`. Boot smoke-asserts `ctx.storage.sql` exists.
+- **Everything is behind a repository interface**; the move log is portable SQL (exit hatch to Postgres/Turso + the Neon fallback in spec §11).
+
+## Amended Interfaces (pin these before phases compose)
+
+- **GameState codec (Phase 1):** `serializeState(gs): string` / `deserializeState(s): GameState`, porting `server/gameState.ts` grid `[...entries()] ⇄ new Map`. **`grid` is a JS Map — `JSON.stringify` yields `{}` and silently loses the board.** Route EVERY GameState read/write (initial_state, snapshot) + `buildClientView` through it. Round-trip test with wilds asserts grid membership + byte-equal drawPile survive.
+- **MovePayload discriminated union (Phase 2):** `play{placements}` | `pass{trades,tradeOrder}` | `wild_recycle{wildPosition,replacement}`. `moves.type CHECK IN('play','pass','wild_recycle')`. `replay()` dispatches all three. `applyWildRecycle` is a real committed action that does NOT advance turnIndex — model it everywhere or replay diverges and the heal detector false-positives.
+- **`replay(initialState, moves): GameState`** — fold non-`reverted` rows through the pure engine; assert `reverted` rows form a contiguous suffix per affected seat (throw on violation); refuse/flag on `engine_version` mismatch (source `engine_version` from the engine package into `meta` at create).
+- **DO-local `archive_outbox` table (replaces the Cloudflare Queue):** on commit, `ctx.waitUntil(env.DB.prepare(upsert).run())` write-through to D1, mark the outbox row flushed; the ~60s cron sweeps unflushed rows. On veto, re-flush reverted rows with `ON CONFLICT DO UPDATE SET reverted=excluded.reverted` (never DO NOTHING for that column, or D1 replay applies the reverted AI moves).
+- **Idempotency:** `UNIQUE(client_move_id)` + in-txn `SELECT 1 exists` (SQLite allows multiple NULLs). AI/floor moves get a **server-minted deterministic id** (`ai:${seat}:${targetMoveIndex}`, `floor:${...}`) so an alarm re-fire produces the identical id → benign no-op. (Do NOT rely on a single last-clientMoveId — a turn is multiple rows.)
+
+## The 13 must-fixes (each maps to a phase)
+
+1. **P1** — `new_sqlite_classes` migration + bindings + cron + 2025 compat_date + boot `ctx.storage.sql` assert.
+2. **P3** — CPU-kill floor via `async alarm(alarmInfo)`: on `alarmInfo.isRetry`/`retryCount>=1` take the O(1) `applyPass(state,seat,[],[])` floor instead of recomputing. Drop the heal-alarm + persisted attempt-counter (CF retries the SAME alarm; a rolled-back counter re-runs the killed path forever → permanent stall). Wrap `alarm()` in try/catch and re-arm the next alarm before returning.
+3. **P2 + Global** — synchronous `transactionSync` commit span (see Amended Constraints); explicit UNIQUE(move_index)-violation handling.
+4. **P3/P4** — inside the AI/floor write txn, re-read `turnIndex` AND `controlled_by_ai`; ABORT if changed (level-triggered reclaim-race guard). Test: fire ai_step, deliver reclaim before the txn, assert the AI move is NOT committed.
+5. **P3/P4 + Global** — heartbeat as sole presence authority for drive+freeze (see Amended Constraints).
+6. **P1** — GameState Map↔JSON codec (see Amended Interfaces); round-trip test first.
+7. **P2 + P3** — model `wild_recycle` in MovePayload/CHECK/replay; heal detector distinguishes "no row since ai_step" (CPU-kill → floor) from "a wild_recycle committed, no play yet" (progress → re-arm, don't floor).
+8. **P5 + P7** — DO-local `archive_outbox` + `ctx.waitUntil` write-through instead of the Queue (Queue is 10k ops/day + 24h retention); veto re-flush `reverted` to D1. Test: replay from D1 with a vetoed game asserts equality.
+9. **P1/P2 (not P4)** — thread `accountId` through `applyAndPersist`; `owner_account_id` first-schema; in-txn seat-ownership authz.
+10. **P6 + server** — authenticated `POST /claim {ghost_id}` verifies the device_credential (or a JWT minted from it) owns that ghost_id BEFORE reassigning rows; `ON CONFLICT DO NOTHING`. Test: account B cannot claim account A's ghost_id.
+11. **P1** — redaction boundary: `buildClientView` = own hand full, others as counts, **drawPile as a COUNT only**; `initial_state` has no client-reachable getter. Test: no client payload (sync/echo/nudge/veto) ever contains `initial_state` or an ordered drawPile.
+12. **P4** — device_credential: 32 bytes from `crypto.getRandomValues` (assert 256-bit, never Math.random); store only a SHA-256 hash; lookup/uniqueness key is the credential hash, NOT displayName; `/auth/quick` has mint-new vs authenticate-existing branches.
+13. **P1** — secret-guard as a per-request 503 (see Amended Constraints); test asserts a per-request 503, not a module throw.
+
+## Key should-changes (fold into the relevant phases)
+
+- **P1 WebSocket Hibernation API (mandatory):** accept via `ctx.acceptWebSocket(server)`; implement `webSocketMessage/webSocketClose/webSocketError` as DO methods (never `addEventListener`/`server.accept` — they pin the DO in memory and defeat hibernation); stash `{seatIndex,accountId}` via `ws.serializeAttachment`, recover via `ws.deserializeAttachment`; fan-out via `ctx.getWebSockets()` (never an in-memory Map); `ctx.setWebSocketAutoResponse` for ping/pong. WS first-frame auth: accept, await an auth frame (verify JWT + seat ownership) within ~5s or `close(4001)`; nudges stay seat-agnostic ("news at index N", no hand data).
+- **P1 schema init/rehydration in the DO constructor** via `ctx.blockConcurrencyWhile(async () => runMigrations(ctx.storage.sql))`: `CREATE TABLE IF NOT EXISTS`, a `schema_version` row, idempotent forward ALTERs each boot. Test: a 2nd-gen schema opens a 1st-gen DO cleanly.
+- **Lobby registry:** a synchronously-written `code→gameId + last_activity` index (a small D1 table or index DO written at create and on each commit's activity-touch) — there is NO API to enumerate DOs and a room CODE ≠ gameId; `/join` resolves the DO through it and the cron queries it for stale active games.
+- **`last_processed_at`** persisted on every handler entry; on wake compute `gap = now - last_processed_at`; if `gap > threshold` enter a one-presence-window quarantine and extend all deadline columns by `gap` before evaluating any cover (a DO isn't told how long it was evicted). Test: simulate a long eviction, assert a present-heartbeating seat is NOT covered on wake.
+- **Veto in one `transactionSync`; owner-first authz** (`token.account_id === seats[targetSeat].owner_account_id` else 403) THEN state guards; reversible tail = maximal contiguous `by_ai` run on the reclaiming seat with nothing after, spanning WHOLE turns (include that turn's wild_recycle rows). Same owner-first check on `/reclaim`.
+- **jose verify pinned:** `jwtVerify(token, key, { algorithms:['HS256'], issuer:'viota', audience:'viota-web' })`; token carries ONLY `account_id` (+iss/aud/exp); all seat/room ownership resolved live per request, never from token claims; refresh re-presents the device_credential. Test alg:none/swapped-alg rejected.
+- **Rate-limit** `/auth/quick`, `/claim`, game-create (per-IP via `CF-Connecting-IP`, DO-backed counter or CF Rate Limiting binding); require a valid account token to create a game; cap games-in-flight per account.
+- **`validate.ts` mandatory first step in EVERY handler** (disconnectTimeout ∈ {30,60,120,300}; clientMoveId uuid+cap; seatIndex ∈ [0,playerCount); placements ≤4 shape-capped; displayName sanitized ≤24, strip control/zero-width, unicode-normalize, at mint). Force `source` server-side (client can never set it); store `client_reported` rows separately (or `verified=false`) so cross-player queries physically exclude them.
+- **CORS middleware on ALL routes** echoing Origin only if it exactly equals the env Pages origin, `Vary: Origin`, preflight for the Authorization header. **Origin story:** on pure free tier `workers.dev` and `pages.dev` are DIFFERENT origins → either accept cross-origin (delete the spec's "same origin" language) or use one custom domain (~$10/yr). (Fixes today's `Access-Control-Allow-Origin: *` on auth'd responses.)
+
+## Plan gaps to add
+
+- **Eviction tests can't force-evict a live DO in Miniflare.** Prove liveness rehydration by: (a) drive state+timers to storage, get a fresh stub, assert liveness rehydrates from storage alone; (b) invoke `alarm()` via `runDurableObjectAlarm()`/`runInDurableObject()` + advance time to prove the timer-wheel refires from the `timers` table; (c) simulate redeploy by discarding + re-fetching.
+- Add the **soft per-turn deadline** as a first-schema column + a distinct timer kind + the client "AI this turn" button.
+- Add a P6 task for the **WS-blocked → 5s `/sync` polling** fallback.
+- Add a P6 task to **DELETE the existing vote system** (client `VoteBanner.tsx` + server vote maps/handlers) that auto-cover replaces; enumerate reused-as-is (Board/Hand/Card/Cell/TopBar) vs rewritten (`net/connection.ts`, `gameStore`→online store) vs deleted.
+- **P1 engine-bundling checkpoint (first green gate):** import a real `@viota/engine` call inside the DO and confirm it bundles+runs under `wrangler build` AND `vitest-pool-workers` (engine ships raw `src/*.ts` with `moduleResolution:bundler`, no dist step).
+- Name the **background integrity check** (replay+rebuild on mismatch) and **server-side replay-verification of client_reported logs** as DEFERRED fast-follows (not silently dropped).
+- **Request-budget sizing** paragraph: heartbeat 20s (~180 req/hr/player) × concurrent players + /sync + reconnects + 60s cron vs ~100k/day; consider adaptive heartbeat cadence.
+- **Concurrency tests:** two devices same seat (exactly one move/turn; other benign no-op); concurrent reclaims idempotent; veto single-use; AI exactly-once-under-alarm-retry (throw AFTER a successful commit, assert no dup move_index).
+- **P1 CPU micro-benchmark:** worst-case medium move (full board, 2 connected wilds) within the 30s CPU budget; reframe the floor rationale — the O(1) pass floor survives ANY alarm-invocation failure (throw/memory/transient), not a medium-AI overrun (medium is sub-ms).
