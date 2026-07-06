@@ -4,7 +4,7 @@ import { serverUrl } from '../net/config'
 import { getToken } from '../net/identity'
 import { createNudgeChannel } from '../net/nudge'
 import { loadSession, clearSession } from '../net/session'
-import { fetchRoom, startRoom, type RoomSeat } from '../net/lobby'
+import { fetchRoom, startRoom, leaveGame, type RoomSeat } from '../net/lobby'
 
 const SERVER_URL = serverUrl()
 const POLL_MS = 2000
@@ -97,6 +97,10 @@ export default function WaitingRoom() {
   }
 
   function handleLeave() {
+    // Tell the server we're leaving (best-effort) BEFORE dropping local state, so
+    // a departing host is promoted to a remaining player and the room isn't left
+    // un-startable. Navigation proceeds regardless of the request's outcome.
+    if (gameId) leaveGame(SERVER_URL, gameId)
     clearSession()
     navigate('/')
   }

@@ -14,9 +14,11 @@ vi.mock('react-router-dom', async () => {
 
 const fetchRoom = vi.fn()
 const startRoom = vi.fn()
+const leaveGame = vi.fn()
 vi.mock('../net/lobby', () => ({
   fetchRoom: (...a: unknown[]) => fetchRoom(...a),
   startRoom: (...a: unknown[]) => startRoom(...a),
+  leaveGame: (...a: unknown[]) => leaveGame(...a),
 }))
 
 // Capture the nudge options so tests can push frames (host_changed / started).
@@ -46,6 +48,7 @@ beforeEach(() => {
   mockNavigate.mockClear()
   fetchRoom.mockReset()
   startRoom.mockReset()
+  leaveGame.mockReset()
   nudgeOpts = null
   sessionStorage.clear()
   saveSession({ gameId: 'g1', code: 'ABCDEF', mySeat: 0, players: ['Alice'] })
@@ -143,6 +146,16 @@ test('a started WS frame navigates into the game (snappier than the poll)', asyn
   expect(mockNavigate).not.toHaveBeenCalled()
   act(() => nudgeOpts!.onStarted!(0))
   expect(mockNavigate).toHaveBeenCalledWith('/game/online')
+})
+
+test('Leave notifies the server (so a departing host is promoted) before going home', async () => {
+  fetchRoom.mockResolvedValue(hostedRoom)
+  leaveGame.mockResolvedValue(undefined)
+  render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
+  await screen.findByText('Bob')
+  await userEvent.click(screen.getByText('Leave'))
+  await waitFor(() => expect(leaveGame).toHaveBeenCalledWith(expect.any(String), 'g1'))
+  expect(mockNavigate).toHaveBeenCalledWith('/')
 })
 
 test('Start is disabled with fewer than 2 humans', async () => {
