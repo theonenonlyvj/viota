@@ -22,7 +22,18 @@ export type RoomSeat = { seatIndex: number; ownerType: string; displayName: stri
 
 /** The result of polling a room via GET /sync: still filling, or the game started. */
 export type RoomState =
-  | { status: 'waiting'; playerCount: number; code: string | null; seats: RoomSeat[] }
+  | {
+      status: 'waiting'
+      playerCount: number
+      code: string | null
+      /** The seat allowed to press Start (the client shows Start only to it). */
+      hostSeat: number
+      /** Seats still 'open' — filled by AI at /start (drives the confirm prompt). */
+      openSeats: number
+      /** Host's AI-takeover patience (ms); `0` = wait-for-me; null = server default. */
+      aiTakeoverMs: number | null
+      seats: RoomSeat[]
+    }
   | { status: 'started' }
 
 /** Roster seat -> a display label (open seats read as "Open"). */
@@ -135,18 +146,35 @@ export async function fetchRoom(serverUrl: string, gameId: string): Promise<Room
     status?: string
     playerCount?: number
     code?: string | null
+    hostSeat?: number
+    openSeats?: number
+    aiTakeoverMs?: number | null
     seats?: RoomSeat[]
   }
   if (body.status === 'waiting') {
-    return { status: 'waiting', playerCount: body.playerCount ?? 0, code: body.code ?? null, seats: body.seats ?? [] }
+    return {
+      status: 'waiting',
+      playerCount: body.playerCount ?? 0,
+      code: body.code ?? null,
+      hostSeat: body.hostSeat ?? 0,
+      openSeats: body.openSeats ?? 0,
+      aiTakeoverMs: body.aiTakeoverMs ?? null,
+      seats: body.seats ?? [],
+    }
   }
   return { status: 'started' }
 }
 
-/** Start a waiting room (deal + go live). Any seated player may call it. */
+/**
+ * Start a waiting room (deal + go live). Host-only server-side: a non-host gets
+ * a 403 `not_host`, surfaced as an Error whose message is `not_host` so the
+ * caller can message it gracefully. Needs >=2 humans (409 otherwise).
+ */
 export async function startRoom(serverUrl: string, gameId: string): Promise<void> {
   const res = await authedFetch(serverUrl, `/games/${encodeURIComponent(gameId)}/start`, { method: 'POST' })
-  if (!res.ok) throw new Error(`start failed: ${res.status}`)
+  if (res.ok) return
+  const body = (await res.json().catch(() => ({}))) as { error?: string }
+  throw new Error(body.error ?? `start failed: ${res.status}`)
 }
 
 /** Intentional leave: the server AI-covers my seat immediately. Best-effort. */

@@ -15,6 +15,8 @@ export type ServerFrame =
   | { type: 'nudge'; moveIndex: number }
   | { type: 'ai_cover'; seat: number }
   | { type: 'veto'; seat: number; moveIndex: number }
+  | { type: 'host_changed'; hostSeat: number }
+  | { type: 'started'; moveIndex: number }
   | { type: string; [k: string]: unknown }
 
 export type FrameDeps = {
@@ -23,6 +25,11 @@ export type FrameDeps = {
   onAuthOk?: (seat: number) => void
   onAiCover?: (seat: number) => void
   onVeto?: (seat: number, moveIndex: number) => void
+  /** The lobby host role moved (host left the waiting room) — a joiner re-checks
+   *  whether IT now sees Start. */
+  onHostChanged?: (hostSeat: number) => void
+  /** The host dealt the room — waiting joiners navigate into the game. */
+  onStarted?: (moveIndex: number) => void
 }
 
 /**
@@ -44,6 +51,12 @@ export function handleServerFrame(frame: ServerFrame | null, deps: FrameDeps): v
     }
     case 'ai_cover':
       deps.onAiCover?.((frame as { seat: number }).seat)
+      break
+    case 'host_changed':
+      deps.onHostChanged?.((frame as { hostSeat: number }).hostSeat)
+      break
+    case 'started':
+      deps.onStarted?.((frame as { moveIndex: number }).moveIndex)
       break
     case 'veto': {
       const f = frame as { seat: number; moveIndex: number }
