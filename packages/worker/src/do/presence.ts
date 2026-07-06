@@ -42,22 +42,25 @@ export function maxLastSeen(repo: GameRepository): number | null {
 
 /**
  * Waiting-room host promotion (avoids a dead room if the host leaves before
- * /start). If `departingSeat` IS the current host, hand the host role to the
- * LOWEST-index seat that is still a PRESENT human (`owner_type='human'` AND
- * `last_seen_at` within PRESENCE_MS), excluding the departing seat. Returns the
- * new host seat index when it actually changed (so the caller can broadcast
- * `host_changed`), else null — nothing to promote, or no eligible successor (in
- * which case `host_seat` is left unchanged).
+ * /start). If `departingSeat` IS the current host, hand the host role to another
+ * HUMAN seat (`owner_type='human'`, excluding the departing seat): a PRESENT one
+ * (lowest-index) if any, else the lowest-index human regardless of presence.
+ *
+ * Presence is NOT required, because a waiting room never establishes it — lobby
+ * clients only poll GET /sync and don't heartbeat, so `isSeatPresent` is false
+ * for every seat there. Requiring it would leave every host-leave un-promoted
+ * and strand the joiners (they can never obtain Start). Returns the new host
+ * seat index when it changed (so the caller broadcasts `host_changed`), else
+ * null — the departing seat isn't the host, or no other human exists.
  */
 export function promoteHost(repo: GameRepository, departingSeat: number, now: number): number | null {
   const meta = repo.getMeta()
   if (!meta) return null
   const host = meta.host_seat ?? 0
   if (host !== departingSeat) return null // the host is not the one leaving
-  const successor = repo
-    .getSeats()
-    .find((s) => s.seat_index !== departingSeat && s.owner_type === 'human' && isSeatPresent(s, now))
-  if (!successor) return null
+  const humans = repo.getSeats().filter((s) => s.seat_index !== departingSeat && s.owner_type === 'human')
+  if (humans.length === 0) return null // no one to promote — leave host_seat unchanged
+  const successor = humans.find((s) => isSeatPresent(s, now)) ?? humans[0]! // present preferred, else lowest-index
   repo.putMeta({ ...meta, host_seat: successor.seat_index })
   return successor.seat_index
 }
