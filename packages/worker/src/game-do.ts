@@ -4,6 +4,8 @@ import { assertSecret } from './auth'
 import { runMigrations, GameRepository, type SqlLike, type MoveRow } from './do/storage'
 import { initGameForOnline, type SeatOwner } from './do/init'
 import { buildClientView } from './do/view'
+import { validateMovePayloadShape } from './do/moves'
+import { applyAndPersist, type ApplyParams } from './do/apply'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -15,6 +17,28 @@ function json(data: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function isUuid(s: string): boolean {
+  return UUID_RE.test(s)
+}
+
+/** Map an applyAndPersist error string to a 4xx status (never a 500). */
+function statusForError(error: string): number {
+  switch (error) {
+    case 'not_your_seat':
+      return 403
+    case 'game_over':
+    case 'not_your_turn':
+    case 'conflict':
+      return 409
+    case 'game_not_found':
+    case 'no_snapshot':
+      return 404
+    default:
+      return 400 // engine/illegal-move errors
+  }
 }
 
 /** Public, redacted projection of a persisted move row (no hidden-hand data). */
@@ -77,6 +101,9 @@ export class GameDO extends DurableObject<Env> {
 
     if (request.method === 'POST' && path === '/init') {
       return this.handleInit(request)
+    }
+    if (request.method === 'POST' && path === '/move') {
+      return this.handleMove(request)
     }
     if (request.method === 'GET' && path === '/sync') {
       return this.handleSync(url)
@@ -183,6 +210,64 @@ export class GameDO extends DurableObject<Env> {
     })
 
     return json({ gameUuid: meta.game_uuid, moveIndex: meta.move_index, playerCount }, 201)
+  }
+
+  /**
+   * POST /move — the authoritative move endpoint.
+   *
+   * The ONLY await is `request.json()`, done BEFORE the synchronous txn span so
+   * the input gate stays closed across read->validate->write and a move can
+   * never interleave with an alarm onto the same move_index. After the txn
+   * commits we `nudge` (commit-then-broadcast — never before commit).
+   */
+  private async handleMove(request: Request): Promise<Response> {
+    let body: {
+      seatIndex?: unknown
+      move?: unknown
+      clientMoveId?: unknown
+      accountId?: unknown
+    }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'bad_json' }, 400)
+    }
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+
+    // Bounds-validate seatIndex ∈ [0, player_count).
+    const seatIndex = body.seatIndex
+    if (typeof seatIndex !== 'number' || !Number.isInteger(seatIndex) || seatIndex < 0 || seatIndex >= meta.player_count) {
+      return json({ error: 'invalid_seat' }, 400)
+    }
+
+    // clientMoveId is a uuid or null (server-minted AI ids never come via HTTP).
+    const clientMoveId = body.clientMoveId ?? null
+    if (clientMoveId !== null && !(typeof clientMoveId === 'string' && isUuid(clientMoveId))) {
+      return json({ error: 'invalid_client_move_id' }, 400)
+    }
+
+    // Move payload shape/bounds (the engine remains the legality gate).
+    const shape = validateMovePayloadShape(body.move)
+    if (!shape.ok) return json({ error: shape.error }, 400)
+
+    // accountId: a validated input for now; Phase 4 resolves it from the JWT.
+    const accountId = typeof body.accountId === 'string' ? body.accountId : null
+
+    const params: ApplyParams = { seatIndex, move: shape.move, clientMoveId, accountId }
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const result = this.ctx.storage.transactionSync(() => applyAndPersist(sql, this.repo, params))
+
+    // Commit-then-broadcast: nudge ONLY after the sync txn returns (committed).
+    if ('ok' in result && result.ok) {
+      this.nudge(result.moveIndex)
+      return json(result, 200)
+    }
+    if ('duplicate' in result) {
+      return json(result, 200) // benign ack, no new move -> no nudge
+    }
+    return json(result, statusForError(result.error))
   }
 
   private handleSync(url: URL): Response {
