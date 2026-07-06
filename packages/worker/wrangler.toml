@@ -32,11 +32,12 @@ database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 [triggers]
 crons = ["* * * * *"]
 
-# JWT_SECRET: local-dev placeholder ONLY, and DELIBERATELY invalid (< 32 bytes)
-# so the request-time secret guard fires (503) if you `wrangler dev` without a
-# real secret. In PRODUCTION this MUST be set via `wrangler secret put JWT_SECRET`
-# (a 32+ byte random; a secret binding overrides this [vars] value). Never ship
-# this value.
+# JWT_SECRET is DELIBERATELY NOT set here. In PRODUCTION it MUST be set via
+# `wrangler secret put JWT_SECRET` (32+ byte random) — a [vars] entry with the
+# same name would OVERWRITE that remote secret on every `wrangler deploy`
+# (wrangler warns, then replaces). Unset locally, the request-time secret guard
+# fail-closes with 503, same as the old invalid placeholder did; for local
+# `wrangler dev` put a real 32+ byte JWT_SECRET in a git-ignored `.dev.vars`.
 #
 # CLIENT_ORIGIN is DELIBERATELY UNSET here: unset => CORS falls back to a
 # permissive `*`, which is what you want for local `wrangler dev` (any localhost
@@ -45,5 +46,3 @@ crons = ["* * * * *"]
 # pinned to that one origin. workers.dev and pages.dev are DIFFERENT origins — if
 # CLIENT_ORIGIN is left unset in prod, the browser still works (`*`) but the pin
 # is lost; setting it is the intended, safer prod posture. See src/cors.ts.
-[vars]
-JWT_SECRET = "insecure-dev-placeholder"

@@ -69,19 +69,28 @@ export interface CoverDeps {
 
 /**
  * Disconnect detection: mark the seat disconnected and arm the right deadline.
- *  - ON turn → the fast-track `turn` clock (~27s) so present players are never
- *    held hostage by one locked phone;
- *  - OFF turn → the `grace` clock (~120s) before the absent seat is covered.
- * Phase 4 wires this to `webSocketClose`; Phase 3 calls it from a helper/test.
+ *  - `meta.ai_takeover_ms === 0` ("wait for me") → arm NO cover timer at all; a
+ *    disconnected seat is NEVER auto-covered and the game just waits/pauses;
+ *  - ON turn → the `turn` clock at `now + ai_takeover_ms` (the host's chosen
+ *    patience; falls back to the fixed `AWAY_TURN_MS` when unset) so present
+ *    players are never held hostage by one locked phone;
+ *  - OFF turn → the fixed `grace` clock (~120s) before the absent seat is covered.
  */
 export function markDisconnected(repo: GameRepository, sql: SqlLike, seat: number, now: number): void {
   const seatRow = repo.getSeats()[seat]
   if (!seatRow) return
   repo.setDisconnectedAt(seat, now)
   const meta = repo.getMeta()
+  const takeover = meta?.ai_takeover_ms ?? null
+  // "Wait for me": never auto-cover this seat — clear both absence deadlines.
+  if (takeover === 0) {
+    clearTimer(sql, 'grace', seat)
+    clearTimer(sql, 'turn', seat)
+    return
+  }
   if (meta && meta.current_seat === seat) {
     clearTimer(sql, 'grace', seat)
-    setTimer(sql, 'turn', seat, now + AWAY_TURN_MS)
+    setTimer(sql, 'turn', seat, now + (takeover ?? AWAY_TURN_MS))
   } else {
     clearTimer(sql, 'turn', seat)
     setTimer(sql, 'grace', seat, now + GRACE_MS)

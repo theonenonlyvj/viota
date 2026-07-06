@@ -41,6 +41,9 @@ export type WaitingRoomView = {
   /** How many seats are still `'open'` — the count that will fill with AI at
    *  /start, so the host can confirm before starting. */
   openSeats: number
+  /** The host-chosen AI-takeover patience (ms) for a disconnected on-turn seat;
+   *  `0` = wait-for-me; null = the fixed away-turn default applies. */
+  aiTakeoverMs: number | null
   seats: { seatIndex: number; ownerType: string; displayName: string | null }[]
 }
 
@@ -53,6 +56,7 @@ export function buildWaitingRoomView(repo: GameRepository): WaitingRoomView {
     code: meta?.code ?? null,
     hostSeat: meta?.host_seat ?? 0,
     openSeats: seats.filter((s) => s.owner_type === 'open').length,
+    aiTakeoverMs: meta?.ai_takeover_ms ?? null,
     seats: seats.map((s) => ({
       seatIndex: s.seat_index,
       ownerType: s.owner_type,

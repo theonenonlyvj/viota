@@ -96,7 +96,13 @@ async function route(request: Request, env: Env): Promise<Response> {
           new Request('https://do/create-room', {
             method: 'POST',
             headers: authHeadersFrom(request),
-            body: JSON.stringify({ playerCount: body.playerCount, displayName: body.displayName, gameUuid: gameId, code }),
+            body: JSON.stringify({
+              playerCount: body.playerCount,
+              displayName: body.displayName,
+              aiTakeoverMs: body.aiTakeoverMs, // host's AI-takeover choice (validated in the DO)
+              gameUuid: gameId,
+              code,
+            }),
           }),
         )
         if (!res.ok) return res // surface the DO's 401/validation verbatim

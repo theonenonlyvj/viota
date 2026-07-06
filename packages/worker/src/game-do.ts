@@ -13,7 +13,7 @@ import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
 import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, promoteHost, type CoverDeps } from './do/presence'
-import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
+import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT, AI_TAKEOVER_ALLOWED_MS, DEFAULT_AI_TAKEOVER_MS } from './do/constants'
 import { flushMove, flushGameCreate, flushGameEnd, touchActivity, upsertGamePlayers, setGameStatus, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
 export interface Env {
@@ -38,6 +38,14 @@ function json(data: unknown, status = 200): Response {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 function isUuid(s: string): boolean {
   return UUID_RE.test(s)
+}
+
+/** Server-side allowlist gate for the host-chosen AI-takeover patience: a value
+ *  on the allowlist passes through (incl. 0 = "wait for me"); anything else
+ *  (absent, non-numeric, off-list) coerces to the default — never trust the
+ *  client, never fail the create over it. */
+function resolveAiTakeoverMs(raw: unknown): number {
+  return typeof raw === 'number' && AI_TAKEOVER_ALLOWED_MS.includes(raw) ? raw : DEFAULT_AI_TAKEOVER_MS
 }
 
 /** Map an applyAndPersist error string to a 4xx status (never a 500). */
@@ -340,8 +348,9 @@ export class GameDO extends DurableObject<Env> {
             break
           }
           case 'soft':
-            // A connected-but-AFK idler on their OWN turn -> cover (even present).
-            autoCover(this.coverDeps(), this.repo, sql, t.seat, now)
+            // Retired (Phase 8): a CONNECTED player is NEVER auto-covered. Any
+            // legacy `soft` timer is simply cleared so it can't re-fire/cover.
+            clearTimer(sql, 'soft', t.seat)
             break
           case 'ai_step':
             clearTimer(sql, 'ai_step', t.seat)
@@ -552,7 +561,14 @@ export class GameDO extends DurableObject<Env> {
     const auth = await requireAuth(request, this.env)
     if (auth instanceof Response) return auth
 
-    let body: { playerCount?: number; displayName?: unknown; gameUuid?: string; engineVersion?: string; code?: string }
+    let body: {
+      playerCount?: number
+      displayName?: unknown
+      gameUuid?: string
+      engineVersion?: string
+      code?: string
+      aiTakeoverMs?: unknown
+    }
     try {
       body = (await request.json()) as typeof body
     } catch {
@@ -572,6 +588,7 @@ export class GameDO extends DurableObject<Env> {
       gameUuid: body.gameUuid,
       engineVersion: body.engineVersion,
       code: typeof body.code === 'string' ? body.code : null,
+      aiTakeoverMs: resolveAiTakeoverMs(body.aiTakeoverMs), // allowlisted host choice (0=wait-for-me)
     })
 
     // The lobby-registry row MUST be resolvable immediately (a friend may join

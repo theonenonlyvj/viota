@@ -16,8 +16,19 @@ export const GRACE_MS = 120_000
  *  so present players are never held hostage by one locked phone. */
 export const AWAY_TURN_MS = 27_000
 
-/** Soft visible per-turn deadline for a connected-but-AFK seat. */
+/** Soft visible per-turn deadline for a connected-but-AFK seat.
+ *  RETIRED as an auto-cover trigger (Phase 8): a CONNECTED player is NEVER
+ *  auto-replaced no matter how long they think. Kept only as an exported
+ *  constant / valid timer KIND for backward compatibility. */
 export const SOFT_TURN_MS = 75_000
+
+/** The host-chosen AI-takeover patience allowlist (ms): how long a DISCONNECTED
+ *  player's seat waits on their turn before a medium AI covers it. `0` = "wait
+ *  for me" — NEVER auto-cover (the game just pauses). Validated server-side. */
+export const AI_TAKEOVER_ALLOWED_MS: readonly number[] = [0, 30_000, 60_000, 120_000, 300_000]
+
+/** Default AI-takeover patience when the host does not choose one. */
+export const DEFAULT_AI_TAKEOVER_MS = 60_000
 
 /** AI pacing between chained drive steps (humans see each play land). */
 export const AI_STEP_MS = 800

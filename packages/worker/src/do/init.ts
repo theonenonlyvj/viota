@@ -55,6 +55,8 @@ export function dealInto(repo: GameRepository, playerCount: number, opts: InitOp
     engine_version: prior?.engine_version ?? opts.engineVersion ?? DEFAULT_ENGINE_VERSION,
     game_uuid: prior?.game_uuid ?? opts.gameUuid ?? crypto.randomUUID(),
     code: prior?.code ?? null,
+    host_seat: prior?.host_seat ?? 0,
+    ai_takeover_ms: prior?.ai_takeover_ms ?? null, // preserve the host's choice from the waiting room
   }
 
   repo.putInitialState(initialState) // ON CONFLICT DO NOTHING -> immutable
@@ -122,6 +124,9 @@ export type CreateWaitingRoomOptions = {
   gameUuid?: string
   engineVersion?: string
   code?: string | null
+  /** Host-chosen AI-takeover patience (ms); validated by the caller. Null/absent
+   *  leaves it unset (the fixed away-turn default applies). */
+  aiTakeoverMs?: number | null
 }
 
 /**
@@ -146,6 +151,7 @@ export function createWaitingRoom(repo: GameRepository, opts: CreateWaitingRoomO
     game_uuid: opts.gameUuid ?? crypto.randomUUID(),
     code: opts.code ?? null,
     host_seat: 0, // the room creator seats at 0 and is the initial host
+    ai_takeover_ms: opts.aiTakeoverMs ?? null,
   }
   repo.putMeta(meta)
 

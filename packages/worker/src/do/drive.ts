@@ -2,9 +2,9 @@ import { AIAgent, type Move } from '@viota/engine'
 import type { GameRepository, SqlLike } from './storage'
 import { applyAndPersist } from './apply'
 import type { MovePayload } from './moves'
-import { setTimer, clearTimer, hasTimer } from './timers'
-import { isAnyHumanPresent, isSeatPresent } from './presence'
-import { AI_STEP_MS, SOFT_TURN_MS } from './constants'
+import { setTimer, clearTimer } from './timers'
+import { isAnyHumanPresent } from './presence'
+import { AI_STEP_MS } from './constants'
 
 /**
  * The drive loop — the ONLY code path that produces AI moves.
@@ -54,13 +54,10 @@ export function driveIfAI(deps: DriveDeps, repo: GameRepository, sql: SqlLike, n
   if (!seat) return
 
   if (!seat.controlled_by_ai) {
-    // A human's turn — nothing to drive. Drop any stale ai_step and arm a soft
-    // AFK deadline ONCE per turn (guarded by hasTimer so repeated heartbeats
-    // don't keep pushing it out) so a present idler can't freeze the table.
+    // A human's turn — nothing to drive. Drop any stale ai_step. A CONNECTED
+    // player is NEVER auto-replaced no matter how long they think (Phase 8:
+    // an intense game is never interrupted), so NO soft AFK cover is armed here.
     clearTimer(sql, 'ai_step', currentSeat)
-    if (isSeatPresent(seat, now) && !hasTimer(sql, 'soft', currentSeat)) {
-      setTimer(sql, 'soft', currentSeat, now + SOFT_TURN_MS)
-    }
     return
   }
 
