@@ -25,7 +25,7 @@ new_sqlite_classes = ["GameDO"]
 [[d1_databases]]
 binding = "DB"
 database_name = "viota"
-database_id = "local-dev-placeholder" # REPLACE with `wrangler d1 create viota` output
+database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 
 # Cron sweep (1-min is the Cloudflare floor): pokes stale active games so their
 # DO alarm/heal path re-drives/abandons them and drains any unflushed archive.

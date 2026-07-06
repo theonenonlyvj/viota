@@ -145,6 +145,7 @@ export function createWaitingRoom(repo: GameRepository, opts: CreateWaitingRoomO
     engine_version: opts.engineVersion ?? DEFAULT_ENGINE_VERSION,
     game_uuid: opts.gameUuid ?? crypto.randomUUID(),
     code: opts.code ?? null,
+    host_seat: 0, // the room creator seats at 0 and is the initial host
   }
   repo.putMeta(meta)
 

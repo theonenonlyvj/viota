@@ -40,6 +40,28 @@ export function maxLastSeen(repo: GameRepository): number | null {
   return max
 }
 
+/**
+ * Waiting-room host promotion (avoids a dead room if the host leaves before
+ * /start). If `departingSeat` IS the current host, hand the host role to the
+ * LOWEST-index seat that is still a PRESENT human (`owner_type='human'` AND
+ * `last_seen_at` within PRESENCE_MS), excluding the departing seat. Returns the
+ * new host seat index when it actually changed (so the caller can broadcast
+ * `host_changed`), else null — nothing to promote, or no eligible successor (in
+ * which case `host_seat` is left unchanged).
+ */
+export function promoteHost(repo: GameRepository, departingSeat: number, now: number): number | null {
+  const meta = repo.getMeta()
+  if (!meta) return null
+  const host = meta.host_seat ?? 0
+  if (host !== departingSeat) return null // the host is not the one leaving
+  const successor = repo
+    .getSeats()
+    .find((s) => s.seat_index !== departingSeat && s.owner_type === 'human' && isSeatPresent(s, now))
+  if (!successor) return null
+  repo.putMeta({ ...meta, host_seat: successor.seat_index })
+  return successor.seat_index
+}
+
 /** Broadcast surface for auto-cover (a dismissible `ai_cover` toast). */
 export interface CoverDeps {
   broadcast(payload: unknown): void
