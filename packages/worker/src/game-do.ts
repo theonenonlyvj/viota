@@ -1,9 +1,10 @@
 import { DurableObject } from 'cloudflare:workers'
 import { initGame } from '@viota/engine'
 import { assertSecret } from './auth'
-import { runMigrations, GameRepository, type SqlLike, type MoveRow } from './do/storage'
+import { runMigrations, GameRepository, type SqlLike } from './do/storage'
 import { initGameForOnline, type SeatOwner } from './do/init'
 import { buildClientView } from './do/view'
+import { toClientMove } from './do/client-move'
 import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
 
@@ -38,20 +39,6 @@ function statusForError(error: string): number {
       return 404
     default:
       return 400 // engine/illegal-move errors
-  }
-}
-
-/** Public, redacted projection of a persisted move row (no hidden-hand data). */
-function toClientMove(m: MoveRow) {
-  return {
-    moveIndex: m.move_index,
-    turnNumber: m.turn_number,
-    seatIndex: m.seat_index,
-    type: m.type,
-    payload: JSON.parse(m.payload) as unknown,
-    scoreDelta: m.score_delta,
-    scoreAfter: m.score_after,
-    byAi: m.by_ai,
   }
 }
 
