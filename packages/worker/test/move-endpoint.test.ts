@@ -1,19 +1,10 @@
 import { SELF } from 'cloudflare:test'
 import { it, expect, describe } from 'vitest'
 import type { Card } from '@viota/engine'
-import { authHeaders, mintToken } from './helpers'
+import { authHeaders, mintToken, createActiveGame } from './helpers'
 
 async function createGame(): Promise<string> {
-  const seatOwners = [
-    { ownerType: 'human' as const, accountId: 'acct-0', displayName: 'P0' },
-    { ownerType: 'human' as const, accountId: 'acct-1', displayName: 'P1' },
-  ]
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount: 2, seatOwners }),
-  })
-  return ((await res.json()) as { gameId: string }).gameId
+  return createActiveGame(['acct-0', 'acct-1'])
 }
 
 /** Read a seat's own hand by authing as that seat's owner (acct-<seat>). */

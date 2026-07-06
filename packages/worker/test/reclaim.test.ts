@@ -3,23 +3,14 @@ import { it, expect, describe } from 'vitest'
 import { GameRepository, type SqlLike } from '../src/do/storage'
 import { setTimer, hasTimer } from '../src/do/timers'
 import { driveIfAI } from '../src/do/drive'
-import { authHeaders, mintToken } from './helpers'
+import { authHeaders, mintToken, createActiveGame } from './helpers'
 
 function stubFor(name: string) {
   return env.GAME_DO.get(env.GAME_DO.idFromName(name))
 }
 
 async function createGame(): Promise<string> {
-  const seatOwners = [
-    { ownerType: 'human' as const, accountId: 'acct-0', displayName: 'P0' },
-    { ownerType: 'human' as const, accountId: 'acct-1', displayName: 'P1' },
-  ]
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount: 2, seatOwners }),
-  })
-  return ((await res.json()) as { gameId: string }).gameId
+  return createActiveGame(['acct-0', 'acct-1'])
 }
 
 describe('POST /reclaim', () => {

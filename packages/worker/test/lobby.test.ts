@@ -2,6 +2,7 @@ import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect, describe, beforeAll } from 'vitest'
 import { applyD1Schema } from '../src/d1/schema'
 import { flushGameCreate, flushGameEnd, resolveActiveGameByCode, type GameArchiveRow } from '../src/do/archive'
+import { authHeaders } from './helpers'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
 
@@ -31,17 +32,11 @@ describe('lobby registry (games.code + status/last_activity)', () => {
     expect(await resolveActiveGameByCode(DB(), code)).toBeNull() // no longer joinable
   })
 
-  it('POST /games writes the registry row (code + active status + last_activity)', async () => {
+  it('POST /games (solo) writes the registry row (code + active status + last_activity)', async () => {
     const res = await SELF.fetch('https://example.com/games', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        playerCount: 2,
-        seatOwners: [
-          { ownerType: 'human', accountId: 'a0', displayName: 'P0' },
-          { ownerType: 'human', accountId: 'a1', displayName: 'P1' },
-        ],
-      }),
+      headers: { 'content-type': 'application/json', ...(await authHeaders('a0')) },
+      body: JSON.stringify({ playerCount: 2, mode: 'solo', displayName: 'P0' }),
     })
     const { gameId, code } = (await res.json()) as { gameId: string; code: string }
     expect(typeof code).toBe('string')

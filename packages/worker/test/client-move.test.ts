@@ -3,7 +3,7 @@ import { it, expect, describe } from 'vitest'
 import type { Card } from '@viota/engine'
 import { toClientMove } from '../src/do/client-move'
 import type { MoveRow } from '../src/do/storage'
-import { authHeaders } from './helpers'
+import { authHeaders, createActiveGame } from './helpers'
 
 // --- Unit: the projection redacts a pass, keeps play/wild_recycle public ------
 function row(over: Partial<MoveRow>): MoveRow {
@@ -57,16 +57,7 @@ describe('toClientMove projection', () => {
 
 // --- Integration: a pass never leaks trade contents through /sync -------------
 async function createGame(): Promise<string> {
-  const seatOwners = [
-    { ownerType: 'human' as const, accountId: 'acct-0', displayName: 'P0' },
-    { ownerType: 'human' as const, accountId: 'acct-1', displayName: 'P1' },
-  ]
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount: 2, seatOwners }),
-  })
-  return ((await res.json()) as { gameId: string }).gameId
+  return createActiveGame(['acct-0', 'acct-1'])
 }
 
 async function sync(gameId: string, seat: number): Promise<{ text: string; body: any }> {

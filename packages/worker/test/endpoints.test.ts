@@ -1,17 +1,10 @@
 import { SELF } from 'cloudflare:test'
 import { it, expect } from 'vitest'
-import { authHeaders, mintToken } from './helpers'
+import { authHeaders, mintToken, createActiveGame } from './helpers'
 
-async function createGame(playerCount = 2) {
-  const seatOwners = Array.from({ length: playerCount }, (_, i) => ({
-    ownerType: 'human' as const, accountId: `a${i}`, displayName: `P${i}`,
-  }))
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount, seatOwners }),
-  })
-  return res
+/** An ACTIVE 2-human game (seat 0 = a0, seat 1 = a1) via the authed flow. */
+async function createGame(): Promise<string> {
+  return createActiveGame(['a0', 'a1'])
 }
 
 /** GET /sync authed as an account (seat is resolved from ownership). */
@@ -21,8 +14,12 @@ async function sync(gameId: string, accountId: string, since = 0): Promise<Respo
   })
 }
 
-it('POST /games creates a game and returns { gameId } with NO leaked state', async () => {
-  const res = await createGame(2)
+it('POST /games (solo) creates a game and returns { gameId } with NO leaked state', async () => {
+  const res = await SELF.fetch('https://example.com/games', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(await authHeaders('a0')) },
+    body: JSON.stringify({ playerCount: 2, mode: 'solo', displayName: 'X' }),
+  })
   expect(res.status).toBe(201)
   const text = await res.text()
   const body = JSON.parse(text)
@@ -35,7 +32,7 @@ it('POST /games creates a game and returns { gameId } with NO leaked state', asy
 })
 
 it('GET /sync returns own hand FULL, others + draw pile as COUNTS only', async () => {
-  const { gameId } = await (await createGame(2)).json() as { gameId: string }
+  const gameId = await createGame()
 
   const res = await sync(gameId, 'a0')
   expect(res.status).toBe(200)
@@ -68,7 +65,7 @@ it('GET /sync returns own hand FULL, others + draw pile as COUNTS only', async (
 })
 
 it('each seat sees only its OWN hand (seat resolved from the token account)', async () => {
-  const { gameId } = await (await createGame(2)).json() as { gameId: string }
+  const gameId = await createGame()
 
   const s0 = await (await sync(gameId, 'a0')).json() as any
   const s1 = await (await sync(gameId, 'a1')).json() as any
@@ -84,7 +81,7 @@ it('each seat sees only its OWN hand (seat resolved from the token account)', as
 })
 
 it('rejects an unauthenticated sync (401) and a sync from an account with no seat (403)', async () => {
-  const { gameId } = await (await createGame(2)).json() as { gameId: string }
+  const gameId = await createGame()
   // no token
   expect((await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0`)).status).toBe(401)
   // valid token, but the account owns no seat in this game
@@ -92,14 +89,24 @@ it('rejects an unauthenticated sync (401) and a sync from an account with no sea
     headers: { Authorization: `Bearer ${await mintToken('a-stranger')}` },
   })
   expect(res.status).toBe(403)
-  expect((await res.json()).error).toBe('not_your_seat')
+  expect((await res.json() as any).error).toBe('not_your_seat')
 })
 
 it('rejects an invalid player count at create', async () => {
   const res = await SELF.fetch('https://example.com/games', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount: 5, seatOwners: [] }),
+    headers: { 'content-type': 'application/json', ...(await authHeaders('a0')) },
+    body: JSON.stringify({ playerCount: 5, mode: 'solo', displayName: 'X' }),
   })
   expect(res.status).toBe(400)
+})
+
+it('rejects an unrecognized create mode (the legacy seatOwners path was removed)', async () => {
+  const res = await SELF.fetch('https://example.com/games', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ playerCount: 2, seatOwners: [] }),
+  })
+  expect(res.status).toBe(400)
+  expect((await res.json() as any).error).toBe('invalid_mode')
 })

@@ -1,3 +1,4 @@
+import { SELF } from 'cloudflare:test'
 import type { Card, GameState, RegularCard } from '@viota/engine'
 import { posKey, initGame } from '@viota/engine'
 import type { MovePayload } from '../src/do/moves'
@@ -16,6 +17,47 @@ export function mintToken(accountId: string): Promise<string> {
 /** `{ Authorization: 'Bearer <token>' }` for an account — the auth header. */
 export async function authHeaders(accountId: string): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${await mintToken(accountId)}` }
+}
+
+/**
+ * Create an ACTIVE multi-human game via the REAL authed flow (the legacy
+ * unauthed seatOwners create was removed): the host (`accounts[0]`, seat 0)
+ * opens a `mode:'multiplayer'` waiting room, each other account joins the next
+ * open seat in order, then the host starts. Seat i is owned by `accounts[i]`;
+ * any seats beyond `accounts.length` fill with medium AI at /start. Returns the
+ * gameId. `initGame` always opens on seat 0, so seat 0 (the host) moves first.
+ */
+export async function createActiveGame(accounts: string[], playerCount: number = accounts.length): Promise<string> {
+  const [host, ...joiners] = accounts
+  const createRes = await SELF.fetch('https://example.com/games', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(await authHeaders(host!)) },
+    body: JSON.stringify({ playerCount, mode: 'multiplayer', displayName: 'P0' }),
+  })
+  const { gameId } = (await createRes.json()) as { gameId: string }
+  for (let i = 0; i < joiners.length; i++) {
+    await SELF.fetch(`https://example.com/games/${gameId}/join`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...(await authHeaders(joiners[i]!)) },
+      body: JSON.stringify({ displayName: `P${i + 1}` }),
+    })
+  }
+  await SELF.fetch(`https://example.com/games/${gameId}/start`, {
+    method: 'POST',
+    headers: await authHeaders(host!),
+  })
+  return gameId
+}
+
+/** Create an ACTIVE solo game (seat 0 = `host`, the rest medium AI) via the
+ *  authed `mode:'solo'` create. Returns the gameId. */
+export async function createSoloGame(host: string, playerCount = 2): Promise<string> {
+  const res = await SELF.fetch('https://example.com/games', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...(await authHeaders(host)) },
+    body: JSON.stringify({ playerCount, mode: 'solo', displayName: 'Solo' }),
+  })
+  return ((await res.json()) as { gameId: string }).gameId
 }
 
 // --- Deterministic card fixtures --------------------------------------------
