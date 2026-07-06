@@ -15,7 +15,7 @@ it('Worker fetch() returns 503 when JWT_SECRET is missing/short/default', async 
   }
 })
 
-it('Worker fetch() proceeds (not 503) with a valid 32+ byte secret', async () => {
+it('Worker fetch() proceeds past the guard (not 503) with a valid 32+ byte secret', async () => {
   const ctx = createExecutionContext()
   const res = await worker.fetch(
     new Request('https://example.com/'),
@@ -23,8 +23,10 @@ it('Worker fetch() proceeds (not 503) with a valid 32+ byte secret', async () =>
     ctx,
   )
   await waitOnExecutionContext(ctx)
+  // A valid secret means the guard does NOT short-circuit; routing then decides
+  // the status (an unknown path is a 404, which still proves the guard passed).
   expect(res.status).not.toBe(503)
-  expect(res.status).toBe(200)
+  expect(res.status).toBe(404)
 })
 
 it('GameDO.fetch() also fail-closes on a bad secret (defense in depth)', async () => {
