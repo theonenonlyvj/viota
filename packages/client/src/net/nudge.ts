@@ -118,7 +118,13 @@ export function createNudgeChannel(
     const delay = Math.min(MAX_BACKOFF_MS, 1000 * Math.pow(2, attempt))
     attempt++
     reconnectTimer = setTimeout(() => {
-      if (!closed && isVisible()) connect()
+      if (closed) return
+      // If the tab is hidden when the timer fires, do NOT give up — re-arm the
+      // backoff so the reconnect chain survives being backgrounded (otherwise the
+      // socket stays dead for the rest of the session and we degrade to the poll
+      // forever). A foreground event also forces an immediate reconnect via reopen().
+      if (isVisible()) connect()
+      else scheduleReconnect()
     }, delay)
   }
 

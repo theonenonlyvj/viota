@@ -104,3 +104,32 @@ test('reconnects with infinite (capped) backoff — no give-up after many drops'
   }
   expect(MockWebSocket.instances.length).toBeGreaterThan(6)
 })
+
+test('a reconnect timer that fires while hidden re-arms instead of dying', () => {
+  vi.useFakeTimers()
+  let visible = false
+  createNudgeChannel('http://sv', 'g1', {
+    getToken: () => 't', getLocalIndex: () => 0, sync: vi.fn(), isVisible: () => visible,
+  })
+  // Drop the initial socket so a backoff reconnect is scheduled.
+  MockWebSocket.instances[0]!.fail()
+  const afterFail = MockWebSocket.instances.length
+  // The backoff timer fires while the tab is HIDDEN: it must NOT connect, but it
+  // MUST re-arm the chain (the bug: it silently dead-ends here for the session).
+  vi.advanceTimersByTime(30_000)
+  expect(MockWebSocket.instances.length).toBe(afterFail) // no socket opened while hidden
+  // Returning to the foreground, the still-armed backoff now reconnects.
+  visible = true
+  vi.advanceTimersByTime(30_000)
+  expect(MockWebSocket.instances.length).toBeGreaterThan(afterFail)
+})
+
+test('reopen() forces a fresh connect when the socket is down', () => {
+  const channel = createNudgeChannel('http://sv', 'g1', {
+    getToken: () => 't', getLocalIndex: () => 0, sync: vi.fn(), isVisible: () => true,
+  })
+  MockWebSocket.instances[0]!.fail() // socket down (onclose ran)
+  const before = MockWebSocket.instances.length
+  channel.reopen()
+  expect(MockWebSocket.instances.length).toBe(before + 1)
+})
