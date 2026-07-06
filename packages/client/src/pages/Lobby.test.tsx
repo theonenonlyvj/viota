@@ -55,6 +55,25 @@ test('Create Room creates a multiplayer room and navigates to the waiting room',
   expect(sessionStorage.getItem('viota_online_session')).toContain('g2')
 })
 
+test('Create Room sends the DEFAULT aiTakeoverMs (1 min) when untouched', async () => {
+  createOnlineRoom.mockResolvedValue({ gameId: 'g2', code: 'ROOMED', mySeat: 0, players: ['Alice', 'Open'] })
+  render(<MemoryRouter><Lobby /></MemoryRouter>)
+  await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
+  await userEvent.click(screen.getByText('Create Room'))
+  await waitFor(() => expect(createOnlineRoom).toHaveBeenCalled())
+  expect(createOnlineRoom.mock.calls[0]![1]).toMatchObject({ aiTakeoverMs: 60000 })
+})
+
+test('the AI-takeover picker sends the chosen value (Wait for me -> 0)', async () => {
+  createOnlineRoom.mockResolvedValue({ gameId: 'g2', code: 'ROOMED', mySeat: 0, players: ['Alice', 'Open'] })
+  render(<MemoryRouter><Lobby /></MemoryRouter>)
+  await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
+  await userEvent.click(screen.getByText('Wait for me'))
+  await userEvent.click(screen.getByText('Create Room'))
+  await waitFor(() => expect(createOnlineRoom).toHaveBeenCalled())
+  expect(createOnlineRoom.mock.calls[0]![1]).toMatchObject({ aiTakeoverMs: 0 })
+})
+
 test('a create failure surfaces an error and does not navigate', async () => {
   createOnlineGame.mockRejectedValue(new Error('boom'))
   render(<MemoryRouter><Lobby /></MemoryRouter>)
