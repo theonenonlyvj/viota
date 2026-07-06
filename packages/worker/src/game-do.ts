@@ -8,8 +8,9 @@ import { toClientMove } from './do/client-move'
 import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
-import { clearTimer, setTimer, rearmAlarm, dueTimers, minFireAt } from './do/timers'
-import { autoCover, seatIndexPresent, type CoverDeps } from './do/presence'
+import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
+import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, type CoverDeps } from './do/presence'
+import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -165,6 +166,10 @@ export class GameDO extends DurableObject<Env> {
     const sql = this.ctx.storage.sql as unknown as SqlLike
     const now = Date.now()
     try {
+      // Boot grace-quarantine: credit any eviction gap to absence deadlines
+      // BEFORE evaluating them, so a compute gap is never miscounted as absence.
+      const gap = this.onWake(sql, now)
+
       if (alarmInfo?.isRetry) {
         this.applyFloor(sql, now)
         await rearmAlarm(this.ctx, sql)
@@ -175,8 +180,11 @@ export class GameDO extends DurableObject<Env> {
       // fires the earliest timer IS due — process everything up to
       // max(now, min). In production min <= now so this is just `<= now`; the
       // max() also makes the timer fire correct when the harness fires an alarm
-      // immediately (ignoring its scheduled time). Then re-arm to the new min.
-      const threshold = Math.max(now, minFireAt(sql) ?? now)
+      // immediately (ignoring its scheduled time). But after a LONG eviction we
+      // just credited (pushed out) every absence deadline, so we must NOT sweep
+      // up to the (now-future) min — use `now` and let the re-arm reschedule the
+      // credited deadlines into the future (the quarantine window).
+      const threshold = gap > PRESENCE_MS ? now : Math.max(now, minFireAt(sql) ?? now)
       for (const t of dueTimers(sql, threshold)) {
         switch (t.kind) {
           case 'grace':
@@ -201,7 +209,7 @@ export class GameDO extends DurableObject<Env> {
             break
           case 'heal':
             clearTimer(sql, 'heal', t.seat)
-            driveIfAI(this.driveDeps(), this.repo, sql, now)
+            this.healTick(sql, now)
             break
         }
       }
@@ -214,6 +222,50 @@ export class GameDO extends DurableObject<Env> {
         /* nothing more we can safely do here */
       }
     }
+  }
+
+  /**
+   * On any DO wake: compute the eviction gap from `last_processed_at`, credit it
+   * to absence deadlines (grace/turn/soft) when it exceeds one presence window
+   * so a returning player gets a fresh window instead of an instant cover, then
+   * stamp `last_processed_at = now`. Returns the gap. Idempotent per wake.
+   */
+  private onWake(sql: SqlLike, now: number): number {
+    const last = this.repo.getLastProcessedAt()
+    const gap = last == null ? 0 : now - last
+    if (gap > PRESENCE_MS) creditEvictionGap(sql, gap)
+    this.repo.setLastProcessedAt(now)
+    return gap
+  }
+
+  /** Ensure the abandon/re-drive self-tick is armed while the game is active. */
+  private ensureHeal(sql: SqlLike, now: number): void {
+    if (!hasTimer(sql, 'heal', GLOBAL_SEAT)) setTimer(sql, 'heal', GLOBAL_SEAT, now + HEAL_MS)
+  }
+
+  /**
+   * The `heal` self-tick: while active, keep re-driving as a safety net and,
+   * when ZERO humans have been present for longer than the abandon window, mark
+   * the game abandoned (recoverable by replay if reopened). While humans are
+   * present (or the abandon window has not elapsed) it re-arms itself.
+   */
+  private healTick(sql: SqlLike, now: number): void {
+    const meta = this.repo.getMeta()
+    if (!meta || meta.status !== 'active') return // terminal -> stop ticking
+
+    if (isAnyHumanPresent(this.repo, now)) {
+      driveIfAI(this.driveDeps(), this.repo, sql, now) // safety re-drive
+      setTimer(sql, 'heal', GLOBAL_SEAT, now + HEAL_MS)
+      return
+    }
+
+    const seen = maxLastSeen(this.repo)
+    if (seen != null && now - seen > ABANDON_MS) {
+      this.repo.putMeta({ ...meta, status: 'abandoned' })
+      return // stop ticking — the game is abandoned
+    }
+    // Frozen but not yet abandoned -> keep checking.
+    setTimer(sql, 'heal', GLOBAL_SEAT, now + HEAL_MS)
   }
 
   /**
@@ -371,6 +423,7 @@ export class GameDO extends DurableObject<Env> {
 
     const params: ApplyParams = { seatIndex, move: shape.move, clientMoveId, accountId }
     const sql = this.ctx.storage.sql as unknown as SqlLike
+    this.onWake(sql, Date.now()) // credit any eviction gap + stamp last_processed_at
     const result = this.ctx.storage.transactionSync(() => applyAndPersist(sql, this.repo, params))
 
     // Commit-then-broadcast: nudge ONLY after the sync txn returns (committed).
@@ -381,6 +434,7 @@ export class GameDO extends DurableObject<Env> {
       // alarm to the new min after the (possible) AI drive.
       const now = Date.now()
       clearTimer(sql, 'soft', seatIndex)
+      this.ensureHeal(sql, now) // keep the abandon/re-drive self-tick alive
       driveIfAI(this.driveDeps(), this.repo, sql, now)
       await rearmAlarm(this.ctx, sql)
       return json(result, 200)
@@ -421,9 +475,13 @@ export class GameDO extends DurableObject<Env> {
 
     const sql = this.ctx.storage.sql as unknown as SqlLike
     const now = Date.now()
+    // A heartbeat is the credit trigger too: it refreshes THIS seat's presence
+    // first, so onWake's eviction credit protects the OTHER seats' deadlines.
     this.repo.setPresence(seatIndex, now)
+    this.onWake(sql, now)
     clearTimer(sql, 'grace', seatIndex)
     clearTimer(sql, 'turn', seatIndex)
+    this.ensureHeal(sql, now)
     driveIfAI(this.driveDeps(), this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)
     return json({ ok: true, seat: seatIndex })

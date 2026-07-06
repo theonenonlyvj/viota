@@ -104,8 +104,24 @@ const migrateV1: Migration = (sql) => {
   `)
 }
 
+/**
+ * v2: a single-row `runtime` table holding `last_processed_at` — the wall-clock
+ * of the last handler/alarm entry. On the next wake, `gap = now -
+ * last_processed_at` reveals how long the DO was evicted (a DO is never told),
+ * so a compute gap can be credited to absence deadlines instead of miscounted
+ * as player absence.
+ */
+const migrateV2: Migration = (sql) => {
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS runtime (
+      id                INTEGER PRIMARY KEY CHECK (id = 1),
+      last_processed_at INTEGER
+    )
+  `)
+}
+
 /** Ordered migration list. Index i is schema version (i+1). */
-export const MIGRATIONS: Migration[] = [migrateV1]
+export const MIGRATIONS: Migration[] = [migrateV1, migrateV2]
 
 /**
  * Idempotent forward migrator. Safe to run on every DO boot: creates the
@@ -307,6 +323,20 @@ export class GameRepository {
       last_seen_at: r.last_seen_at == null ? null : Number(r.last_seen_at),
       final_score: r.final_score == null ? null : Number(r.final_score),
     }))
+  }
+
+  /** Wall-clock of the last handler/alarm entry (null before the first one). */
+  getLastProcessedAt(): number | null {
+    const r = this.all(`SELECT last_processed_at FROM runtime WHERE id = 1`)[0]
+    return r && r.last_processed_at != null ? Number(r.last_processed_at) : null
+  }
+
+  setLastProcessedAt(now: number): void {
+    this.sql.exec(
+      `INSERT INTO runtime (id, last_processed_at) VALUES (1, ?)
+       ON CONFLICT(id) DO UPDATE SET last_processed_at = excluded.last_processed_at`,
+      now,
+    )
   }
 
   /** Targeted AI-control flip (avoids a full read-modify-write of the seat). */
