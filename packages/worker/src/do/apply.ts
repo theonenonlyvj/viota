@@ -16,6 +16,18 @@ export type ApplyParams = {
   accountId: string | null
   byAi?: boolean
   aiDifficulty?: string | null
+  /**
+   * Reclaim-race guard (must-fix #4): a server-minted AI/floor move must be for
+   * `expectedSeat` AND — when `requireAiControlled` — that seat must STILL be
+   * `controlled_by_ai` at the moment the txn reads storage. The check runs
+   * INSIDE the synchronous write span (`transactionSync`), so a reclaim that
+   * flips `controlled_by_ai` / advances the turn before this move commits makes
+   * the AI move ABORT ('reclaimed') and write nothing. This is the level-
+   * triggered guard: it re-reads the freshly-persisted seat/turn, never a stale
+   * value captured earlier by the drive loop.
+   */
+  expectedSeat?: number
+  requireAiControlled?: boolean
   /** created_at; injectable for deterministic tests. */
   now?: number
 }
@@ -63,6 +75,17 @@ export function applyAndPersist(_sql: SqlLike, repo: GameRepository, params: App
   if (!seat) return { error: 'not_your_seat' }
   if (!params.byAi && (params.accountId == null || params.accountId !== seat.owner_account_id)) {
     return { error: 'not_your_seat' }
+  }
+
+  // (c2) reclaim-race guard (must-fix #4) — re-read turn + AI-control from the
+  // freshly-persisted rows and ABORT if a reclaim beat this AI/floor move to the
+  // commit. Runs inside the sync span so nothing is written when it fires.
+  if (params.requireAiControlled) {
+    if (params.expectedSeat == null || meta.current_seat !== params.expectedSeat) {
+      return { error: 'reclaimed' }
+    }
+    const guardSeat = seats[params.expectedSeat]
+    if (!guardSeat || !guardSeat.controlled_by_ai) return { error: 'reclaimed' }
   }
 
   // (d) turn — a play/pass must be on the current seat. A wild_recycle is

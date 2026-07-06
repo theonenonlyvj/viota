@@ -309,6 +309,21 @@ export class GameRepository {
     }))
   }
 
+  /** Targeted AI-control flip (avoids a full read-modify-write of the seat). */
+  setControlledByAi(seat: number, value: boolean): void {
+    this.sql.exec(`UPDATE seats SET controlled_by_ai = ? WHERE seat_index = ?`, value ? 1 : 0, seat)
+  }
+
+  /** Heartbeat: refresh presence and clear any disconnect mark for a seat. */
+  setPresence(seat: number, now: number): void {
+    this.sql.exec(`UPDATE seats SET last_seen_at = ?, disconnected_at = NULL WHERE seat_index = ?`, now, seat)
+  }
+
+  /** Mark a seat disconnected (arming grace/turn is the caller's job). */
+  setDisconnectedAt(seat: number, now: number): void {
+    this.sql.exec(`UPDATE seats SET disconnected_at = ? WHERE seat_index = ?`, now, seat)
+  }
+
   putSeat(s: SeatRow): void {
     this.sql.exec(
       `INSERT INTO seats
