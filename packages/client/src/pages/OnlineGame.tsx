@@ -9,8 +9,8 @@ import { serverUrl } from '../net/config'
 import { createOnlineClient } from '../net/online'
 import { createNudgeChannel } from '../net/nudge'
 import { runReconcile, attachForegroundReconcile } from '../net/reconcile'
-import { getToken } from '../net/identity'
-import { createOnlineGame, leaveGame } from '../net/lobby'
+import { getToken, getDisplayName } from '../net/identity'
+import { createOnlineRoom, leaveGame } from '../net/lobby'
 import { loadSession, saveSession, clearSession, type OnlineSession } from '../net/session'
 
 const SERVER_URL = serverUrl()
@@ -99,13 +99,15 @@ export default function OnlineGame() {
     }
   }, [session])
 
-  function handleRematch() {
-    const name = players[mySeat] ?? 'Player'
-    createOnlineGame(SERVER_URL, { displayName: name, opponents: Math.max(1, playerCount - 1) })
+  function handlePlayAgain() {
+    // Open a fresh MULTIPLAYER waiting room (same seat count) so friends can
+    // regroup by code; the host Starts and any empty seats AI-fill. (The old
+    // "Rematch" dropped every human into an isolated solo-vs-AI game.)
+    createOnlineRoom(SERVER_URL, { displayName: getDisplayName(), playerCount })
       .then((created) => {
         const next: OnlineSession = { gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players }
         saveSession(next)
-        setSession(next) // re-key the lifecycle effect -> fresh game
+        navigate(`/lobby/${created.code}`)
       })
       .catch(() => {})
   }
@@ -224,10 +226,10 @@ export default function OnlineGame() {
               </p>
             ))}
             <button
-              onClick={handleRematch}
+              onClick={handlePlayAgain}
               style={{ marginTop: 16, background: '#3b82f6', border: 'none', color: '#fff', borderRadius: 7, padding: '10px 24px', fontSize: 14, fontWeight: 'bold', cursor: 'pointer' }}
             >
-              Rematch
+              Play again
             </button>
             <button
               onClick={handleLeave}
