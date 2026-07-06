@@ -7,10 +7,21 @@ import { saveSession } from '../net/session'
 
 const SERVER_URL = serverUrl()
 
+/** How long to wait for a dropped player before an AI takes their turn.
+ *  `0` = "wait for me" (never auto-cover). Default = 1 minute (60000). */
+const AI_TAKEOVER_OPTIONS: { label: string; value: number }[] = [
+  { label: '30 sec', value: 30000 },
+  { label: '1 min', value: 60000 },
+  { label: '2 min', value: 120000 },
+  { label: '5 min', value: 300000 },
+  { label: 'Wait for me', value: 0 },
+]
+
 export default function Lobby() {
   const [name, setName] = useState('')
   const [opponents, setOpponents] = useState(1)
   const [roomCode, setRoomCode] = useState('')
+  const [aiTakeoverMs, setAiTakeoverMs] = useState(60000)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
@@ -35,7 +46,7 @@ export default function Lobby() {
     if (!name.trim()) { setError('Name is required'); return }
     setError(''); setBusy(true)
     try {
-      const created = await createOnlineRoom(SERVER_URL, { displayName: name.trim(), playerCount: opponents + 1 })
+      const created = await createOnlineRoom(SERVER_URL, { displayName: name.trim(), playerCount: opponents + 1, aiTakeoverMs })
       claimGhostGames(SERVER_URL).catch(() => {})
       saveSession({ gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players })
       navigate(`/lobby/${created.code}`)
@@ -94,6 +105,23 @@ export default function Lobby() {
         <button style={{ ...btnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleSolo}>
           Play vs AI
         </button>
+        <div>
+          <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>
+            AI takeover for a dropped player (multiplayer)
+          </p>
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+            {AI_TAKEOVER_OPTIONS.map(o => (
+              <button
+                key={o.value}
+                style={optBtn(aiTakeoverMs === o.value)}
+                aria-pressed={aiTakeoverMs === o.value}
+                onClick={() => setAiTakeoverMs(o.value)}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <button style={{ ...btnStyle, background: '#8b5cf6', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleCreateRoom}>
           Create Room
         </button>

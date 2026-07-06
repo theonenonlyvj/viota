@@ -68,7 +68,7 @@ export async function createOnlineGame(
  */
 export async function createOnlineRoom(
   serverUrl: string,
-  opts: { displayName: string; playerCount: number },
+  opts: { displayName: string; playerCount: number; aiTakeoverMs?: number },
 ): Promise<CreatedGame> {
   await quickAuth(serverUrl, opts.displayName)
   const playerCount = Math.min(4, Math.max(2, opts.playerCount))
@@ -76,7 +76,10 @@ export async function createOnlineRoom(
   const res = await authedFetch(serverUrl, '/games', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount, mode: 'multiplayer', displayName: opts.displayName }),
+    // `aiTakeoverMs` is the host's drop-cover patience; `0` = wait-for-me
+    // (never auto-cover). Omitted → the server's default applies. The server
+    // allowlists the value, so an out-of-range one is safely ignored.
+    body: JSON.stringify({ playerCount, mode: 'multiplayer', displayName: opts.displayName, aiTakeoverMs: opts.aiTakeoverMs }),
   })
   if (!res.ok) throw new Error(`create room failed: ${res.status}`)
   const { gameId, code } = (await res.json()) as { gameId: string; code: string }

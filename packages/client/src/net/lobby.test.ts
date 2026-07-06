@@ -62,6 +62,19 @@ test('createOnlineRoom POSTs mode=multiplayer and returns host seat 0 + open slo
   expect(body).toMatchObject({ playerCount: 3, mode: 'multiplayer', displayName: 'Alice' })
 })
 
+test('createOnlineRoom forwards the chosen aiTakeoverMs (incl. 0 = wait-for-me)', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(okJson({ token: 'jwt-1', accountId: 'acc-1' }))
+    .mockResolvedValueOnce(okJson({ gameId: 'g-room', code: 'ROOMED' }, 201))
+  vi.stubGlobal('fetch', fetchMock)
+
+  await createOnlineRoom('http://sv', { displayName: 'Alice', playerCount: 2, aiTakeoverMs: 0 })
+
+  const body = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string)
+  expect(body.aiTakeoverMs).toBe(0)
+})
+
 test('joinOnlineGame quick-auths, resolves the code, joins, and returns the seat + roster', async () => {
   const fetchMock = vi
     .fn()
