@@ -5,6 +5,7 @@ import Board, { type BoardHandle } from '../components/Board'
 import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
+import { recordGhostGame } from '../net/ghost'
 import type { Move } from '@viota/engine'
 
 export default function Game() {
@@ -48,6 +49,23 @@ export default function Game() {
       setWorker(null)
     }
   }, [setWorker, handleWorkerMessage])
+
+  // Record a completed LOCAL solo game under the device ghostId (claimed on
+  // first login). Fire-and-forget; non-fatal if IndexedDB is unavailable.
+  const recordedRef = useRef(false)
+  useEffect(() => {
+    if (phase !== 'game-over') { recordedRef.current = false; return }
+    if (recordedRef.current) return
+    recordedRef.current = true
+    const s = useGameStore.getState()
+    const max = s.scores.length ? Math.max(...s.scores) : 0
+    recordGhostGame({
+      playerCount: s.playerCount,
+      mySeat: s.humanIndex,
+      scores: s.scores,
+      winnerSeat: s.scores.length ? s.scores.indexOf(max) : null,
+    }).catch(() => {})
+  }, [phase])
 
   const humanHand = hands[humanIndex] ?? []
   const canConfirm = staged.length > 0 && phase === 'placing'
