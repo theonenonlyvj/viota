@@ -426,23 +426,25 @@ export class GameDO extends DurableObject<Env> {
     this.onWake(sql, Date.now()) // credit any eviction gap + stamp last_processed_at
     const result = this.ctx.storage.transactionSync(() => applyAndPersist(sql, this.repo, params))
 
-    // Commit-then-broadcast: nudge ONLY after the sync txn returns (committed).
-    if ('ok' in result && result.ok) {
-      this.nudge(result.moveIndex)
-      // Drive trigger: the mover took their turn (drop their soft deadline), then
-      // let the drive loop carry any now-current AI seat. Re-arm the platform
-      // alarm to the new min after the (possible) AI drive.
-      const now = Date.now()
-      clearTimer(sql, 'soft', seatIndex)
-      this.ensureHeal(sql, now) // keep the abandon/re-drive self-tick alive
-      driveIfAI(this.driveDeps(), this.repo, sql, now)
-      await rearmAlarm(this.ctx, sql)
-      return json(result, 200)
+    // Commit-then-broadcast: handle error/duplicate first (clean union narrowing),
+    // then the success path nudges ONLY after the sync txn returned (committed).
+    if ('error' in result) {
+      return json(result, statusForError(result.error))
     }
     if ('duplicate' in result) {
       return json(result, 200) // benign ack, no new move -> no nudge
     }
-    return json(result, statusForError(result.error))
+    // result is { ok: true }
+    this.nudge(result.moveIndex)
+    // Drive trigger: the mover took their turn (drop their soft deadline), then
+    // let the drive loop carry any now-current AI seat. Re-arm the platform
+    // alarm to the new min after the (possible) AI drive.
+    const now = Date.now()
+    clearTimer(sql, 'soft', seatIndex)
+    this.ensureHeal(sql, now) // keep the abandon/re-drive self-tick alive
+    driveIfAI(this.driveDeps(), this.repo, sql, now)
+    await rearmAlarm(this.ctx, sql)
+    return json(result, 200)
   }
 
   /**
