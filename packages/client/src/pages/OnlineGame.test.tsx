@@ -94,10 +94,25 @@ test('returning to the foreground forces the nudge socket to reopen', () => {
   expect(mockReopen).toHaveBeenCalled()
 })
 
-test('game over shows the winner announcement + Rematch', () => {
+test('game over shows the winner announcement + Play again', () => {
   render(<MemoryRouter><OnlineGame /></MemoryRouter>)
   act(() => useGameStore.getState().applyOnlineView(view({ finished: true, scores: [30, 12] }), 9))
   expect(screen.getByText('Game Over')).toBeInTheDocument()
   expect(screen.getByText('You win!')).toBeInTheDocument()
-  expect(screen.getByText('Rematch')).toBeInTheDocument()
+  expect(screen.getByText('Play again')).toBeInTheDocument()
+})
+
+test('Play again creates a fresh MULTIPLAYER room and navigates to the lobby', async () => {
+  mockCreateOnlineRoom.mockResolvedValue({ gameId: 'g2', code: 'ZZZZZZ', mySeat: 0, players: ['You', 'Open'] })
+  render(<MemoryRouter><OnlineGame /></MemoryRouter>)
+  act(() => useGameStore.getState().applyOnlineView(view({ finished: true, scores: [30, 12] }), 9))
+
+  await userEvent.click(screen.getByText('Play again'))
+
+  // Same seat count as the finished game (handCounts.length === 2), and it goes
+  // to the waiting room — NOT a solo-vs-AI game.
+  await waitFor(() => expect(mockCreateOnlineRoom).toHaveBeenCalledWith(
+    expect.any(String), expect.objectContaining({ playerCount: 2 }),
+  ))
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/lobby/ZZZZZZ'))
 })
