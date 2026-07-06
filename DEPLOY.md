@@ -40,10 +40,16 @@ database_id = "PASTE-THE-REAL-ID-HERE"   # was "local-dev-placeholder"
 
 ```bash
 # from packages/worker/
-wrangler d1 migrations apply viota --remote      # runs migrations/0001_init.sql
-# — or the one-shot equivalent —
+wrangler d1 migrations apply viota --remote      # runs 0001_init.sql + 0002_account_geo.sql
+# — or the one-shot equivalent (full current schema in one file) —
 # wrangler d1 execute viota --remote --file=schema/d1.sql
 ```
+
+> **Migrations before code.** New Worker code may depend on new columns (e.g.
+> `0002_account_geo` adds the `accounts.country/region/timezone` the signup
+> INSERT writes). Always `wrangler d1 migrations apply` **before**
+> `wrangler deploy` — deploying code first would make `/auth/quick` throw until
+> the migration lands.
 
 ## 3. Set the JWT secret (required — the Worker refuses to boot without it)
 
@@ -144,7 +150,8 @@ If step 5 shows CORS errors in the browser console, re-check that `CLIENT_ORIGIN
 - **Worker code:** `cd packages/worker && wrangler deploy`.
 - **Client:** rebuild with the same `VITE_SERVER_URL=<WORKER_URL>` and
   `wrangler pages deploy packages/client/dist --project-name viota`.
-- **Schema change:** add `migrations/0002_*.sql` and
-  `wrangler d1 migrations apply viota --remote`.
+- **Schema change:** add `migrations/000N_*.sql` and
+  `wrangler d1 migrations apply viota --remote` **before** `wrangler deploy`
+  (code that reads a new column must not ship ahead of the column).
 - **Rotate the JWT secret:** `wrangler secret put JWT_SECRET` (invalidates live
   tokens; players silently re-auth via their device credential).
