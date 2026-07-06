@@ -12,3 +12,10 @@ class_name = "GameDO"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameDO"]
+
+# JWT_SECRET: local-dev placeholder ONLY, and DELIBERATELY invalid (< 32 bytes)
+# so the request-time secret guard fires (503) if you `wrangler dev` without a
+# real secret. In PRODUCTION this MUST be set via `wrangler secret put JWT_SECRET`
+# (a secret binding overrides this [vars] value). Never ship this value.
+[vars]
+JWT_SECRET = "insecure-dev-placeholder"
