@@ -14,7 +14,7 @@ const waitingSeats = [
 beforeEach(() => localStorage.clear())
 afterEach(() => vi.unstubAllGlobals())
 
-test('createOnlineGame quick-auths then POSTs /games with seat0=human + AI seats', async () => {
+test('createOnlineGame quick-auths then POSTs authed /games mode=solo', async () => {
   const fetchMock = vi
     .fn()
     .mockResolvedValueOnce(okJson({ token: 'jwt-1', accountId: 'acc-1' })) // /auth/quick
@@ -28,9 +28,11 @@ test('createOnlineGame quick-auths then POSTs /games with seat0=human + AI seats
   const [gamesUrl, gamesInit] = fetchMock.mock.calls[1]!
   expect(gamesUrl).toBe('http://sv/games')
   const body = JSON.parse((gamesInit as RequestInit).body as string)
-  expect(body.playerCount).toBe(3)
-  expect(body.seatOwners).toHaveLength(3)
-  expect(body.seatOwners[0]).toMatchObject({ ownerType: 'human', accountId: 'acc-1' })
+  expect(body).toMatchObject({ playerCount: 3, mode: 'solo', displayName: 'Alice' })
+  expect(body.seatOwners).toBeUndefined() // legacy unauthed shape is gone
+  // Authed create: the Bearer token from quickAuth rides the header.
+  const headers = new Headers((gamesInit as RequestInit).headers)
+  expect(headers.get('Authorization')).toBe('Bearer jwt-1')
 })
 
 test('createOnlineGame throws on a failed create', async () => {

@@ -11,14 +11,6 @@ import { authedFetch } from './http'
  * Plus the waiting-room helpers `fetchRoom` / `startRoom` / `leaveGame`.
  */
 
-export type SeatOwnerSpec = {
-  ownerType: 'human' | 'ai' | 'open'
-  accountId?: string | null
-  ghostId?: string | null
-  displayName?: string | null
-  aiDifficulty?: string | null
-}
-
 export type CreatedGame = {
   gameId: string
   code: string
@@ -42,32 +34,30 @@ function seatLabel(s: RoomSeat): string {
 }
 
 /**
- * Quick-account then create a solo-vs-AI online game (seat 0 = me, the rest AI).
- * Returns the gameId + room code + my seat + display names for the seats.
+ * Quick-account then create a solo-vs-AI online game via the authed mode path
+ * (`mode:'solo'` — seat 0 = me, the rest medium AI; the server deals immediately).
+ * The legacy unauthed `{ seatOwners }` create was removed server-side, so this
+ * now sends a Bearer token (from quickAuth). Returns gameId + code + my seat +
+ * the seat display names.
  */
 export async function createOnlineGame(
   serverUrl: string,
-  opts: { displayName: string; opponents: number; aiDifficulty?: string },
+  opts: { displayName: string; opponents: number },
 ): Promise<CreatedGame> {
-  const { accountId } = await quickAuth(serverUrl, opts.displayName)
+  await quickAuth(serverUrl, opts.displayName)
 
   const playerCount = 1 + Math.max(1, opts.opponents)
-  const seatOwners: SeatOwnerSpec[] = [
-    { ownerType: 'human', accountId, displayName: opts.displayName },
-  ]
-  for (let i = 1; i < playerCount; i++) {
-    seatOwners.push({ ownerType: 'ai', aiDifficulty: opts.aiDifficulty ?? 'medium', displayName: `AI ${i + 1}` })
-  }
-
-  const res = await fetch(`${serverUrl}/games`, {
+  const res = await authedFetch(serverUrl, '/games', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount, seatOwners }),
+    body: JSON.stringify({ playerCount, mode: 'solo', displayName: opts.displayName }),
   })
   if (!res.ok) throw new Error(`create game failed: ${res.status}`)
   const { gameId, code } = (await res.json()) as { gameId: string; code: string }
 
-  return { gameId, code, mySeat: 0, players: seatOwners.map((s) => s.displayName ?? 'Player') }
+  // Server names the AI seats `AI 2`, `AI 3`, … (seat 0 is me).
+  const players = [opts.displayName, ...Array.from({ length: playerCount - 1 }, (_, i) => `AI ${i + 2}`)]
+  return { gameId, code, mySeat: 0, players }
 }
 
 /**
