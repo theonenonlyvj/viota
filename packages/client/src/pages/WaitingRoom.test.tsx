@@ -1,50 +1,39 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { vi } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
 import WaitingRoom from './WaitingRoom'
+import { saveSession } from '../net/session'
 
+const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual<typeof import('react-router-dom')>('react-router-dom')
   return {
     ...actual,
-    useNavigate: () => vi.fn(),
-    useParams: () => ({ code: 'ABCD' }),
+    useNavigate: () => mockNavigate,
+    useParams: () => ({ code: 'ABCDEF' }),
   }
 })
 
-vi.mock('../net/connection', () => ({
-  createConnection: () => ({
-    send: vi.fn(),
-    close: vi.fn(),
-    onMessage: vi.fn(),
-    onStatusChange: vi.fn(),
-    status: () => 'connected',
-  }),
-}))
-
 beforeEach(() => {
-  sessionStorage.setItem('viota_token', 'jwt123')
-  sessionStorage.setItem('viota_room', 'ABCD')
-  sessionStorage.setItem('viota_name', 'Alice')
-  sessionStorage.setItem('viota_playerIndex', '0')
+  mockNavigate.mockClear()
+  sessionStorage.clear()
+  saveSession({ gameId: 'g1', code: 'ABCDEF', mySeat: 0, players: ['Alice', 'AI 2'] })
 })
 
-test('renders room code prominently', () => {
+test('renders the room code prominently', () => {
   render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
-  expect(screen.getByText('ABCD')).toBeInTheDocument()
+  expect(screen.getByText('ABCDEF')).toBeInTheDocument()
 })
 
-test('renders waiting message', () => {
+test('lists the seated players', () => {
   render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
-  expect(screen.getByText(/waiting/i)).toBeInTheDocument()
+  expect(screen.getByText(/Alice/)).toBeInTheDocument()
+  expect(screen.getByText('AI 2')).toBeInTheDocument()
 })
 
-test('host sees Start Game button', () => {
+test('Start Game navigates to the online game', async () => {
   render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
-  expect(screen.getByText('Start Game')).toBeInTheDocument()
-})
-
-test('renders disconnect timeout selector for host', () => {
-  render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
-  expect(screen.getByText('2min')).toBeInTheDocument()
+  await userEvent.click(screen.getByText('Start Game'))
+  expect(mockNavigate).toHaveBeenCalledWith('/game/online')
 })

@@ -5,12 +5,22 @@ import Board, { type BoardHandle } from '../components/Board'
 import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
-import VoteBanner from '../components/VoteBanner'
+import { serverUrl } from '../net/config'
+import { createOnlineClient } from '../net/online'
+import { createNudgeChannel } from '../net/nudge'
+import { runReconcile, attachForegroundReconcile } from '../net/reconcile'
+import { getToken } from '../net/identity'
+import { createOnlineGame } from '../net/lobby'
+import { loadSession, saveSession, clearSession, type OnlineSession } from '../net/session'
+
+const SERVER_URL = serverUrl()
+const HEARTBEAT_MS = 20_000
 
 export default function OnlineGame() {
   const navigate = useNavigate()
   const boardRef = useRef<BoardHandle>(null)
   const [showPassModal, setShowPassModal] = useState(false)
+  const [session, setSession] = useState<OnlineSession | null>(() => loadSession())
 
   const phase = useGameStore(s => s.phase)
   const scores = useGameStore(s => s.scores)
@@ -19,71 +29,143 @@ export default function OnlineGame() {
   const selectedCard = useGameStore(s => s.selectedCard)
   const playerCount = useGameStore(s => s.playerCount)
   const difficulty = useGameStore(s => s.difficulty)
-  const humanIndex = useGameStore(s => s.humanIndex)
+  const mySeat = useGameStore(s => s.mySeat)
+  const turnIndex = useGameStore(s => s.turnIndex)
+  const drawPileCount = useGameStore(s => s.drawPileCount)
+  const finished = useGameStore(s => s.finished)
+  const pending = useGameStore(s => s.pending)
+  const aiCoverSeat = useGameStore(s => s.aiCoverSeat)
+  const reclaimable = useGameStore(s => s.reclaimable)
+  const vetoOffer = useGameStore(s => s.vetoOffer)
   const selectCard = useGameStore(s => s.selectCard)
-  const confirmPlay = useGameStore(s => s.confirmPlay)
-  const pass = useGameStore(s => s.pass)
+  const onlinePlay = useGameStore(s => s.onlinePlay)
+  const onlinePass = useGameStore(s => s.onlinePass)
   const recycleValidCards = useGameStore(s => s.recycleValidCards)
-  const confirmRecycle = useGameStore(s => s.confirmRecycle)
-  const playerNames = useGameStore(s => s.playerNames)
-  const turnTimer = useGameStore(s => s.turnTimer)
-  const connectionStatus = useGameStore(s => s.connectionStatus)
-  const disconnectVote = useGameStore(s => s.disconnectVote)
-  const aiTakeoverInfo = useGameStore(s => s.aiTakeoverInfo)
-  const sendVote = useGameStore(s => s.sendVote)
+  const onlineConfirmRecycle = useGameStore(s => s.onlineConfirmRecycle)
+  const reclaimSeat = useGameStore(s => s.reclaimSeat)
+  const doVeto = useGameStore(s => s.doVeto)
+  const dismissAiCover = useGameStore(s => s.dismissAiCover)
 
+  const players = session?.players ?? []
+
+  // No session -> back home.
   useEffect(() => {
-    const interval = setInterval(() => {
-      useGameStore.setState(s => ({ turnTimer: s.turnTimer + 1 }))
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [])
+    if (!session) navigate('/', { replace: true })
+  }, [session, navigate])
 
-  const humanHand = hands[humanIndex] ?? []
-  const canConfirm = staged.length > 0 && phase === 'placing'
-  const roomCode = sessionStorage.getItem('viota_room') ?? ''
+  // The whole online net lifecycle, keyed on the game id (re-runs on Rematch).
+  useEffect(() => {
+    if (!session) return
+    const { gameId, mySeat: seat, players: names } = session
+    const client = createOnlineClient(SERVER_URL, gameId, seat)
+    const store = useGameStore
+    store.getState().startOnline(gameId, seat)
+    store.getState().setOnlineClient(client)
+    store.setState({ playerNames: names })
+
+    const localIndex = () => store.getState().moveIndex
+    const applySync = (r: Parameters<ReturnType<typeof store.getState>['applySync']>[0]) =>
+      store.getState().applySync(r)
+    const reconcile = (withReclaim: boolean) =>
+      runReconcile({ client, getLocalIndex: localIndex, applySync }, { withReclaim }).catch(() => {})
+
+    // Register presence (so AI seats get driven) then pull authoritative truth.
+    client.heartbeat().catch(() => {})
+    reconcile(false)
+
+    const nudge = createNudgeChannel(SERVER_URL, gameId, {
+      getToken,
+      getLocalIndex: localIndex,
+      sync: () => store.getState().resync(),
+      onAiCover: (s) => store.getState().handleAiCover(s),
+      onVeto: () => { /* the frame handler already re-syncs */ },
+      onOpen: () => reconcile(false),
+    })
+
+    const hb = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') client.heartbeat().catch(() => {})
+    }, HEARTBEAT_MS)
+
+    const detach = attachForegroundReconcile((trigger) => {
+      client.heartbeat().catch(() => {})
+      reconcile(trigger === 'visible') // silent reclaim on visibility→visible
+    })
+
+    return () => {
+      clearInterval(hb)
+      detach()
+      nudge.close()
+      store.getState().setOnlineClient(null)
+    }
+  }, [session])
+
+  function handleRematch() {
+    const name = players[mySeat] ?? 'Player'
+    createOnlineGame(SERVER_URL, { displayName: name, opponents: Math.max(1, playerCount - 1) })
+      .then((created) => {
+        const next: OnlineSession = { gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players }
+        saveSession(next)
+        setSession(next) // re-key the lifecycle effect -> fresh game
+      })
+      .catch(() => {})
+  }
+
+  function handleLeave() {
+    // Intentional leave: drop the socket + heartbeats. The server AI-covers the
+    // seat once presence lapses. (Immediate cover on an explicit leave endpoint
+    // is a deferred Worker fast-follow.)
+    clearSession()
+    setSession(null)
+    navigate('/')
+  }
+
+  const isMyTurn = turnIndex === mySeat && !finished
+  const humanHand = hands[mySeat] ?? []
+  const canConfirm = staged.length > 0 && phase === 'placing' && isMyTurn && !pending
 
   return (
     <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <TopBar
         scores={scores}
-        drawPileCount={0}
+        drawPileCount={drawPileCount}
         playerCount={playerCount}
-        humanIndex={humanIndex}
+        humanIndex={mySeat}
         difficulty={difficulty}
         onZoomIn={() => boardRef.current?.zoomIn()}
         onZoomOut={() => boardRef.current?.zoomOut()}
         onAutoFit={() => boardRef.current?.autofit()}
         onRotateCW={() => boardRef.current?.rotateCW()}
         onRotateCCW={() => boardRef.current?.rotateCCW()}
-        playerNames={playerNames}
-        turnTimer={turnTimer}
-        connectionStatus={connectionStatus}
+        playerNames={players}
       />
 
-      {disconnectVote && (
-        <VoteBanner
-          disconnectedPlayerName={playerNames[disconnectVote.disconnectedPlayer] ?? 'Player'}
-          onVote={(choice) => sendVote(disconnectVote.disconnectedPlayer, choice)}
-          votesReceived={disconnectVote.totalVoters > 0 ? disconnectVote.totalVoters : 0}
-          totalVoters={disconnectVote.totalVoters}
-        />
+      {reclaimable && (
+        <div style={banner('#7c3aed')}>
+          <span>AI is covering your seat while you were away.</span>
+          <button style={bannerBtn} onClick={reclaimSeat}>Reclaim</button>
+        </div>
       )}
 
-      {aiTakeoverInfo && !disconnectVote && (
-        <VoteBanner
-          disconnectedPlayerName={playerNames[aiTakeoverInfo.playerIndex] ?? 'Player'}
-          aiTakeover={{ difficulty: aiTakeoverInfo.difficulty }}
-        />
+      {vetoOffer && !reclaimable && (
+        <div style={banner('#b45309')}>
+          <span>The AI played your turn.</span>
+          <button style={bannerBtn} onClick={doVeto}>Undo &amp; play</button>
+        </div>
+      )}
+
+      {aiCoverSeat != null && aiCoverSeat !== mySeat && (
+        <div style={banner('#1e3a5f')}>
+          <span>AI is holding {players[aiCoverSeat] ?? `Player ${aiCoverSeat + 1}`}'s seat — they can rejoin anytime.</span>
+          <button style={bannerBtn} onClick={dismissAiCover}>Dismiss</button>
+        </div>
       )}
 
       <Board ref={boardRef} />
 
       <div style={{
-        background: '#12122a', padding: '12px 16px',
-        borderTop: '1px solid #2a2a4a',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexShrink: 0,
+        background: '#12122a', padding: '12px 16px', borderTop: '1px solid #2a2a4a',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+        opacity: pending ? 0.55 : 1,
       }}>
         <Hand
           hand={humanHand}
@@ -91,15 +173,15 @@ export default function OnlineGame() {
           staged={staged}
           onSelectCard={selectCard}
           recycleValidCards={recycleValidCards}
-          onConfirmRecycle={confirmRecycle}
+          onConfirmRecycle={onlineConfirmRecycle}
         />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 7, alignItems: 'stretch', minWidth: 130 }}>
+          {pending && <span style={{ color: '#93c5fd', fontSize: 12, textAlign: 'center' }}>Sending…</span>}
           <button
             disabled={!canConfirm}
-            onClick={confirmPlay}
+            onClick={onlinePlay}
             style={{
-              background: canConfirm ? '#16a34a' : '#2a2a4a',
-              border: 'none', color: '#fff',
+              background: canConfirm ? '#16a34a' : '#2a2a4a', border: 'none', color: '#fff',
               borderRadius: 7, padding: '9px 0', fontSize: 13, fontWeight: 'bold',
               cursor: canConfirm ? 'pointer' : 'default',
             }}
@@ -107,11 +189,12 @@ export default function OnlineGame() {
             Confirm Play
           </button>
           <button
-            disabled={phase === 'ai-thinking'}
+            disabled={!isMyTurn || pending}
             onClick={() => setShowPassModal(true)}
             style={{
               background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#9ca3af',
-              borderRadius: 7, padding: '7px 0', fontSize: 12, cursor: 'pointer',
+              borderRadius: 7, padding: '7px 0', fontSize: 12,
+              cursor: !isMyTurn || pending ? 'default' : 'pointer',
             }}
           >
             Pass / Trade
@@ -122,50 +205,58 @@ export default function OnlineGame() {
       {showPassModal && (
         <PassTradeModal
           hand={humanHand}
-          onConfirm={(trades, tradeOrder) => {
-            pass(trades, tradeOrder)
-            setShowPassModal(false)
-          }}
+          onConfirm={(trades, tradeOrder) => { onlinePass(trades, tradeOrder); setShowPassModal(false) }}
           onClose={() => setShowPassModal(false)}
         />
       )}
 
-      {phase === 'game-over' && (
+      {finished && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200,
         }}>
-          <div style={{
-            background: '#1e1e3a', borderRadius: 12, padding: 32,
-            border: '1px solid #3a3a5a', textAlign: 'center', minWidth: 300,
-          }}>
-            <h2 style={{ color: '#e2e8f0', marginBottom: 16 }}>Game Over</h2>
+          <div style={{ background: '#1e1e3a', borderRadius: 12, padding: 32, border: '1px solid #3a3a5a', textAlign: 'center', minWidth: 300 }}>
+            <h2 style={{ color: '#e2e8f0', marginBottom: 8 }}>Game Over</h2>
+            <p style={{ color: '#93c5fd', fontWeight: 'bold', marginBottom: 16 }}>{winnerLabel(scores, players, mySeat)}</p>
             {scores.map((s, i) => (
               <p key={i} style={{ color: '#9ca3af', marginBottom: 8 }}>
-                {playerNames[i] ?? `Player ${i + 1}`}: <span style={{ color: '#fff', fontWeight: 'bold' }}>{s}</span>
+                {players[i] ?? `Player ${i + 1}`}: <span style={{ color: '#fff', fontWeight: 'bold' }}>{s}</span>
               </p>
             ))}
             <button
-              onClick={() => navigate(`/lobby/${roomCode}`)}
-              style={{
-                marginTop: 16, background: '#3b82f6', border: 'none', color: '#fff',
-                borderRadius: 7, padding: '10px 24px', fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
-              }}
+              onClick={handleRematch}
+              style={{ marginTop: 16, background: '#3b82f6', border: 'none', color: '#fff', borderRadius: 7, padding: '10px 24px', fontSize: 14, fontWeight: 'bold', cursor: 'pointer' }}
             >
-              Play Again
+              Rematch
             </button>
             <button
-              onClick={() => navigate('/')}
-              style={{
-                marginTop: 8, background: 'transparent', border: '1px solid #3a3a5a', color: '#9ca3af',
-                borderRadius: 7, padding: '8px 24px', fontSize: 12, cursor: 'pointer', display: 'block', width: '100%',
-              }}
+              onClick={handleLeave}
+              style={{ marginTop: 8, background: 'transparent', border: '1px solid #3a3a5a', color: '#9ca3af', borderRadius: 7, padding: '8px 24px', fontSize: 12, cursor: 'pointer', display: 'block', width: '100%' }}
             >
-              Home
+              Leave
             </button>
           </div>
         </div>
       )}
     </div>
   )
+}
+
+function banner(bg: string): React.CSSProperties {
+  return {
+    background: bg, color: '#fff', padding: '8px 16px', display: 'flex',
+    alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 13, flexShrink: 0,
+  }
+}
+const bannerBtn: React.CSSProperties = {
+  background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.35)', color: '#fff',
+  borderRadius: 6, padding: '5px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap',
+}
+
+function winnerLabel(scores: number[], players: string[], mySeat: number): string {
+  if (scores.length === 0) return ''
+  const max = Math.max(...scores)
+  const winner = scores.indexOf(max)
+  if (winner === mySeat) return 'You win!'
+  return `${players[winner] ?? `Player ${winner + 1}`} wins`
 }
