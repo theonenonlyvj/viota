@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
-import { createOnlineGame, createOnlineRoom, joinOnlineGame, fetchRoom, startRoom, leaveGame } from './lobby'
+import { createOnlineGame, createOnlineRoom, joinOnlineGame, fetchRoom, startRoom, leaveGame, myGames } from './lobby'
 
 function okJson(body: unknown, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => body }
@@ -140,4 +140,32 @@ test('startRoom POSTs /start and leaveGame POSTs /leave', async () => {
 test('startRoom surfaces a not_host error on 403', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ error: 'not_host' }, 403)))
   await expect(startRoom('http://sv', 'g1')).rejects.toThrow(/not_host/)
+})
+
+test('myGames maps the server rows to the resumable list (Bearer)', async () => {
+  localStorage.setItem('viota_token', 'jwt-1')
+  const fetchMock = vi.fn().mockResolvedValue(okJson({
+    games: [
+      { game_uuid: 'g-a', code: 'AAA', status: 'active', player_count: 2, last_activity_at: 111, seat_index: 1 },
+      { game_uuid: 'g-w', code: 'WWW', status: 'waiting', player_count: 3, last_activity_at: 99, seat_index: 0 },
+    ],
+  }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const games = await myGames('http://sv')
+
+  expect(fetchMock.mock.calls[0]![0]).toBe('http://sv/my-games')
+  const headers = new Headers((fetchMock.mock.calls[0]![1] as RequestInit).headers)
+  expect(headers.get('Authorization')).toBe('Bearer jwt-1')
+  expect(games).toEqual([
+    { gameId: 'g-a', code: 'AAA', status: 'active', playerCount: 2, seatIndex: 1, lastActivityAt: 111 },
+    { gameId: 'g-w', code: 'WWW', status: 'waiting', playerCount: 3, seatIndex: 0, lastActivityAt: 99 },
+  ])
+})
+
+test('myGames returns [] with no stored token (nothing to resume)', async () => {
+  const fetchMock = vi.fn()
+  vi.stubGlobal('fetch', fetchMock)
+  expect(await myGames('http://sv')).toEqual([])
+  expect(fetchMock).not.toHaveBeenCalled()
 })

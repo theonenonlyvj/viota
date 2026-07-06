@@ -13,10 +13,12 @@ vi.mock('react-router-dom', async () => {
 const createOnlineGame = vi.fn()
 const createOnlineRoom = vi.fn()
 const joinOnlineGame = vi.fn()
+const myGames = vi.fn().mockResolvedValue([])
 vi.mock('../net/lobby', () => ({
   createOnlineGame: (...a: unknown[]) => createOnlineGame(...a),
   createOnlineRoom: (...a: unknown[]) => createOnlineRoom(...a),
   joinOnlineGame: (...a: unknown[]) => joinOnlineGame(...a),
+  myGames: (...a: unknown[]) => myGames(...a),
 }))
 vi.mock('../net/ghost', () => ({ claimGhostGames: vi.fn().mockResolvedValue({ claimed: 0 }) }))
 

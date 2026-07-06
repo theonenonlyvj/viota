@@ -1,4 +1,4 @@
-import { quickAuth } from './identity'
+import { quickAuth, getToken } from './identity'
 import { authedFetch } from './http'
 
 /**
@@ -175,6 +175,51 @@ export async function startRoom(serverUrl: string, gameId: string): Promise<void
   if (res.ok) return
   const body = (await res.json().catch(() => ({}))) as { error?: string }
   throw new Error(body.error ?? `start failed: ${res.status}`)
+}
+
+/** A resumable game the caller owns a seat in (from GET /my-games). */
+export type ResumableGame = {
+  gameId: string
+  code: string | null
+  status: string // 'waiting' | 'active'
+  playerCount: number
+  seatIndex: number
+  lastActivityAt: number
+}
+
+/**
+ * The caller's resumable (waiting + active) games, newest first, via
+ * `GET /my-games` (Bearer). Durable server-side, so a game can be picked back up
+ * exactly where it paused. Returns `[]` when there is no stored token (a device
+ * that never authed has nothing to resume) or on any error — never throws.
+ */
+export async function myGames(serverUrl: string): Promise<ResumableGame[]> {
+  if (!getToken()) return []
+  let res: Response
+  try {
+    res = await authedFetch(serverUrl, '/my-games', { method: 'GET' })
+  } catch {
+    return []
+  }
+  if (!res.ok) return []
+  const body = (await res.json().catch(() => ({}))) as {
+    games?: {
+      game_uuid: string
+      code: string | null
+      status: string
+      player_count: number
+      last_activity_at: number
+      seat_index: number
+    }[]
+  }
+  return (body.games ?? []).map((g) => ({
+    gameId: g.game_uuid,
+    code: g.code ?? null,
+    status: g.status,
+    playerCount: g.player_count,
+    seatIndex: g.seat_index,
+    lastActivityAt: g.last_activity_at,
+  }))
 }
 
 /** Intentional leave: the server AI-covers my seat immediately. Best-effort. */

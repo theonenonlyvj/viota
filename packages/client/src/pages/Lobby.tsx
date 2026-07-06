@@ -4,6 +4,7 @@ import { serverUrl } from '../net/config'
 import { createOnlineGame, createOnlineRoom, joinOnlineGame } from '../net/lobby'
 import { claimGhostGames } from '../net/ghost'
 import { saveSession } from '../net/session'
+import ResumeGames from '../components/ResumeGames'
 
 const SERVER_URL = serverUrl()
 
@@ -133,6 +134,8 @@ export default function Lobby() {
           />
           <button style={{ ...btnStyle, width: '100%', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleJoin}>Join Room</button>
         </div>
+
+        <ResumeGames />
       </div>
 
       <button onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid #3a3a5a', color: '#9ca3af', borderRadius: 7, padding: '8px 24px', fontSize: 12, cursor: 'pointer' }}>
