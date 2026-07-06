@@ -6,6 +6,13 @@ export default defineWorkersConfig({
     poolOptions: {
       workers: {
         wrangler: { configPath: './wrangler.toml' },
+        // Tests need a VALID 32+ byte secret so the request-time guard passes.
+        // This overrides the deliberately-invalid wrangler [vars] placeholder.
+        miniflare: {
+          bindings: {
+            JWT_SECRET: 'test-jwt-secret-0123456789-abcdefghijklmnop',
+          },
+        },
       },
     },
   },
