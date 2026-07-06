@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { initGame } from '@viota/engine'
 import { assertSecret } from './auth'
+import { requireAuth } from './do/authctx'
 import { runMigrations, GameRepository, type SqlLike } from './do/storage'
 import { initGameForOnline, type SeatOwner } from './do/init'
 import { buildClientView } from './do/view'
@@ -101,7 +102,7 @@ export class GameDO extends DurableObject<Env> {
       return this.handleHeartbeat(request)
     }
     if (request.method === 'GET' && path === '/sync') {
-      return this.handleSync(url)
+      return this.handleSync(request, url)
     }
 
     return json({ error: 'not_found' }, 404)
@@ -391,13 +392,16 @@ export class GameDO extends DurableObject<Env> {
       seatIndex?: unknown
       move?: unknown
       clientMoveId?: unknown
-      accountId?: unknown
     }
     try {
       body = (await request.json()) as typeof body
     } catch {
       return json({ error: 'bad_json' }, 400)
     }
+
+    // Authenticate BEFORE the sync txn span (the only awaits are here + json()).
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
 
     const meta = this.repo.getMeta()
     if (!meta) return json({ error: 'game_not_found' }, 404)
@@ -418,10 +422,9 @@ export class GameDO extends DurableObject<Env> {
     const shape = validateMovePayloadShape(body.move)
     if (!shape.ok) return json({ error: shape.error }, 400)
 
-    // accountId: a validated input for now; Phase 4 resolves it from the JWT.
-    const accountId = typeof body.accountId === 'string' ? body.accountId : null
-
-    const params: ApplyParams = { seatIndex, move: shape.move, clientMoveId, accountId }
+    // The acting account is JWT-derived (never a request-body field) — this is
+    // what makes the in-txn authz `accountId === seat.owner_account_id` real.
+    const params: ApplyParams = { seatIndex, move: shape.move, clientMoveId, accountId: auth.accountId }
     const sql = this.ctx.storage.sql as unknown as SqlLike
     this.onWake(sql, Date.now()) // credit any eviction gap + stamp last_processed_at
     const result = this.ctx.storage.transactionSync(() => applyAndPersist(sql, this.repo, params))
@@ -455,25 +458,17 @@ export class GameDO extends DurableObject<Env> {
    * table back on the next iteration). Full silent reclaim is Phase 4.
    */
   private async handleHeartbeat(request: Request): Promise<Response> {
-    let body: { seatIndex?: unknown }
-    try {
-      body = (await request.json()) as typeof body
-    } catch {
-      return json({ error: 'bad_json' }, 400)
-    }
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
 
     const meta = this.repo.getMeta()
     if (!meta) return json({ error: 'game_not_found' }, 404)
 
-    const seatIndex = body.seatIndex
-    if (
-      typeof seatIndex !== 'number' ||
-      !Number.isInteger(seatIndex) ||
-      seatIndex < 0 ||
-      seatIndex >= meta.player_count
-    ) {
-      return json({ error: 'invalid_seat' }, 400)
-    }
+    // The seat is resolved LIVE from account ownership — a client can never
+    // heartbeat (fake presence for) a seat it does not own.
+    const seat = this.repo.seatOwnedBy(auth.accountId)
+    if (!seat) return json({ error: 'not_your_seat' }, 403)
+    const seatIndex = seat.seat_index
 
     const sql = this.ctx.storage.sql as unknown as SqlLike
     const now = Date.now()
@@ -489,18 +484,19 @@ export class GameDO extends DurableObject<Env> {
     return json({ ok: true, seat: seatIndex })
   }
 
-  private handleSync(url: URL): Response {
+  private async handleSync(request: Request, url: URL): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
     const meta = this.repo.getMeta()
     if (!meta) return json({ error: 'game_not_found' }, 404)
 
-    // Bounds-validate the requesting seat (Phase 4 resolves this from identity;
-    // for now it is a declared query param, still range-checked here).
-    const seatRaw = url.searchParams.get('seat')
-    if (seatRaw === null || seatRaw === '') return json({ error: 'missing_seat' }, 400)
-    const seat = Number(seatRaw)
-    if (!Number.isInteger(seat) || seat < 0 || seat >= meta.player_count) {
-      return json({ error: 'invalid_seat' }, 400)
-    }
+    // The requesting seat is resolved from the account's seat ownership — the
+    // read is authorized (403 if the account owns no seat in this game) and the
+    // view is then redacted to THAT seat (own hand full, others as counts).
+    const ownSeat = this.repo.seatOwnedBy(auth.accountId)
+    if (!ownSeat) return json({ error: 'not_your_seat' }, 403)
+    const seat = ownSeat.seat_index
 
     const sinceRaw = url.searchParams.get('since')
     const since = sinceRaw == null ? 0 : Number(sinceRaw)

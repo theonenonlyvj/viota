@@ -61,12 +61,13 @@ export default {
       return stubFor(env, gameId).fetch(new Request('https://do/heartbeat', request))
     }
 
-    // GET /games/:id/sync?since=k&seat=s -> forward to the DO (redacted read).
+    // GET /games/:id/sync?since=k -> forward to the DO (redacted read). The
+    // Authorization header MUST be forwarded (the DO resolves the seat from it).
     const sync = path.match(/^\/games\/([^/]+)\/sync$/)
     if (request.method === 'GET' && sync) {
       const gameId = decodeURIComponent(sync[1]!)
       return stubFor(env, gameId).fetch(
-        new Request(`https://do/sync${url.search}`, { method: 'GET' }),
+        new Request(`https://do/sync${url.search}`, { method: 'GET', headers: request.headers }),
       )
     }
 

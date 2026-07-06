@@ -1,5 +1,6 @@
 import { SELF } from 'cloudflare:test'
 import { it, expect } from 'vitest'
+import { authHeaders, mintToken } from './helpers'
 
 async function createGame(playerCount = 2) {
   const seatOwners = Array.from({ length: playerCount }, (_, i) => ({
@@ -11,6 +12,13 @@ async function createGame(playerCount = 2) {
     body: JSON.stringify({ playerCount, seatOwners }),
   })
   return res
+}
+
+/** GET /sync authed as an account (seat is resolved from ownership). */
+async function sync(gameId: string, accountId: string, since = 0): Promise<Response> {
+  return SELF.fetch(`https://example.com/games/${gameId}/sync?since=${since}`, {
+    headers: await authHeaders(accountId),
+  })
 }
 
 it('POST /games creates a game and returns { gameId } with NO leaked state', async () => {
@@ -29,7 +37,7 @@ it('POST /games creates a game and returns { gameId } with NO leaked state', asy
 it('GET /sync returns own hand FULL, others + draw pile as COUNTS only', async () => {
   const { gameId } = await (await createGame(2)).json() as { gameId: string }
 
-  const res = await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=0`)
+  const res = await sync(gameId, 'a0')
   expect(res.status).toBe(200)
   const text = await res.text()
   const body = JSON.parse(text)
@@ -59,11 +67,11 @@ it('GET /sync returns own hand FULL, others + draw pile as COUNTS only', async (
   expect(text).not.toContain('initialState')
 })
 
-it('each seat sees only its OWN hand', async () => {
+it('each seat sees only its OWN hand (seat resolved from the token account)', async () => {
   const { gameId } = await (await createGame(2)).json() as { gameId: string }
 
-  const s0 = await (await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=0`)).json() as any
-  const s1 = await (await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=1`)).json() as any
+  const s0 = await (await sync(gameId, 'a0')).json() as any
+  const s1 = await (await sync(gameId, 'a1')).json() as any
 
   expect(s0.snapshot.mySeat).toBe(0)
   expect(s1.snapshot.mySeat).toBe(1)
@@ -71,17 +79,20 @@ it('each seat sees only its OWN hand', async () => {
   expect(s0.snapshot.handCounts).toEqual([4, 4])
   expect(s1.snapshot.handCounts).toEqual([4, 4])
   expect(JSON.stringify(s0.snapshot.grid)).toBe(JSON.stringify(s1.snapshot.grid))
-  // The two hands are (with overwhelming probability) different dealt cards;
-  // regardless, seat 1 never receives seat 0's hand array and vice versa.
   expect('hands' in s0.snapshot).toBe(false)
   expect('hands' in s1.snapshot).toBe(false)
 })
 
-it('rejects an out-of-range or missing seat with 400', async () => {
+it('rejects an unauthenticated sync (401) and a sync from an account with no seat (403)', async () => {
   const { gameId } = await (await createGame(2)).json() as { gameId: string }
-  expect((await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=2`)).status).toBe(400)
-  expect((await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=-1`)).status).toBe(400)
-  expect((await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0`)).status).toBe(400)
+  // no token
+  expect((await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0`)).status).toBe(401)
+  // valid token, but the account owns no seat in this game
+  const res = await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0`, {
+    headers: { Authorization: `Bearer ${await mintToken('a-stranger')}` },
+  })
+  expect(res.status).toBe(403)
+  expect((await res.json()).error).toBe('not_your_seat')
 })
 
 it('rejects an invalid player count at create', async () => {

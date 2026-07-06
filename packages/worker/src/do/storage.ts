@@ -310,6 +310,23 @@ export class GameRepository {
     return r ? Number(r.c) : 0
   }
 
+  /**
+   * The seat this account owns in THIS game, or null. Ownership is resolved
+   * LIVE per request (never trusted from a token claim). A game binds at most
+   * one seat per account, so the first match is authoritative.
+   */
+  seatOwnedBy(accountId: string): SeatRow | null {
+    return this.getSeats().find((s) => s.owner_account_id === accountId) ?? null
+  }
+
+  /**
+   * Mark a move row reverted (NEVER delete — audit + data fidelity). Used only
+   * by the bounded veto; replay then skips it. Idempotent.
+   */
+  markReverted(moveIndex: number): void {
+    this.sql.exec(`UPDATE moves SET reverted = 1 WHERE move_index = ?`, moveIndex)
+  }
+
   getSeats(): SeatRow[] {
     return this.all(`SELECT * FROM seats ORDER BY seat_index ASC`).map((r) => ({
       seat_index: Number(r.seat_index),
