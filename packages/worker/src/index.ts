@@ -54,6 +54,13 @@ export default {
       return stubFor(env, gameId).fetch(new Request('https://do/move', request))
     }
 
+    // POST /games/:id/heartbeat -> forward to the DO (presence authority).
+    const heartbeat = path.match(/^\/games\/([^/]+)\/heartbeat$/)
+    if (request.method === 'POST' && heartbeat) {
+      const gameId = decodeURIComponent(heartbeat[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/heartbeat', request))
+    }
+
     // GET /games/:id/sync?since=k&seat=s -> forward to the DO (redacted read).
     const sync = path.match(/^\/games\/([^/]+)\/sync$/)
     if (request.method === 'GET' && sync) {

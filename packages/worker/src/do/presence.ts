@@ -1,5 +1,6 @@
-import type { GameRepository, SeatRow } from './storage'
-import { PRESENCE_MS } from './constants'
+import type { GameRepository, SqlLike, SeatRow } from './storage'
+import { setTimer, clearTimer } from './timers'
+import { PRESENCE_MS, GRACE_MS, AWAY_TURN_MS } from './constants'
 
 /**
  * Presence + auto-cover.
@@ -37,4 +38,47 @@ export function maxLastSeen(repo: GameRepository): number | null {
     if (s.last_seen_at != null && (max == null || s.last_seen_at > max)) max = s.last_seen_at
   }
   return max
+}
+
+/** Broadcast surface for auto-cover (a dismissible `ai_cover` toast). */
+export interface CoverDeps {
+  broadcast(payload: unknown): void
+}
+
+/**
+ * Disconnect detection: mark the seat disconnected and arm the right deadline.
+ *  - ON turn → the fast-track `turn` clock (~27s) so present players are never
+ *    held hostage by one locked phone;
+ *  - OFF turn → the `grace` clock (~120s) before the absent seat is covered.
+ * Phase 4 wires this to `webSocketClose`; Phase 3 calls it from a helper/test.
+ */
+export function markDisconnected(repo: GameRepository, sql: SqlLike, seat: number, now: number): void {
+  const seatRow = repo.getSeats()[seat]
+  if (!seatRow) return
+  repo.setDisconnectedAt(seat, now)
+  const meta = repo.getMeta()
+  if (meta && meta.current_seat === seat) {
+    clearTimer(sql, 'grace', seat)
+    setTimer(sql, 'turn', seat, now + AWAY_TURN_MS)
+  } else {
+    clearTimer(sql, 'turn', seat)
+    setTimer(sql, 'grace', seat, now + GRACE_MS)
+  }
+}
+
+/**
+ * Auto-cover a seat with a fixed MEDIUM AI (never a blocking vote): flip
+ * `controlled_by_ai`, cancel the seat's absence deadlines, kick the drive loop
+ * with an immediate `ai_step`, and broadcast a dismissible `ai_cover` toast.
+ * The caller re-arms the platform alarm after this returns.
+ */
+export function autoCover(deps: CoverDeps, repo: GameRepository, sql: SqlLike, seat: number, now: number): void {
+  const seatRow = repo.getSeats()[seat]
+  if (!seatRow) return
+  repo.setControlledByAi(seat, true)
+  clearTimer(sql, 'grace', seat)
+  clearTimer(sql, 'turn', seat)
+  clearTimer(sql, 'soft', seat)
+  setTimer(sql, 'ai_step', seat, now) // fire the drive loop on the next alarm
+  deps.broadcast({ type: 'ai_cover', seat })
 }
