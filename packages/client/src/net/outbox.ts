@@ -5,8 +5,9 @@ import { OUTBOX_STORE, getAllFromStore, withStore } from './idb'
  * The IndexedDB move outbox (spec §4). Every online move is enqueued locally
  * BEFORE it is POSTed, so a network failure never loses it: it stays `queued`
  * and is replayed idempotently on the next reconcile (the server dedupes by
- * `clientMoveId`). A move that completes (any HTTP response, success or a
- * permanent 4xx) is marked `done` so it is never re-sent.
+ * `clientMoveId`). A move that RESOLVES (a 2xx, or a permanent 4xx) is marked
+ * `done` so it is never re-sent; a transient 5xx/408/429 is treated like a
+ * network drop and stays `queued` for replay.
  */
 export type OutboxEntry = {
   clientMoveId: string
