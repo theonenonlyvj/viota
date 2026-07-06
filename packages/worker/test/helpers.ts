@@ -3,6 +3,20 @@ import { posKey, initGame } from '@viota/engine'
 import type { MovePayload } from '../src/do/moves'
 import type { SeatOwner } from '../src/do/init'
 import { runMigrations, GameRepository, type SqlLike } from '../src/do/storage'
+import { signToken } from '../src/jwt'
+
+// The vitest miniflare binding (vitest.config.ts) injects exactly this secret.
+export const TEST_JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijklmnop'
+
+/** Mint a valid Bearer token for an account (24h HS256). */
+export function mintToken(accountId: string): Promise<string> {
+  return signToken(accountId, TEST_JWT_SECRET)
+}
+
+/** `{ Authorization: 'Bearer <token>' }` for an account — the auth header. */
+export async function authHeaders(accountId: string): Promise<Record<string, string>> {
+  return { Authorization: `Bearer ${await mintToken(accountId)}` }
+}
 
 // --- Deterministic card fixtures --------------------------------------------
 export const WILD: Card = { kind: 'wild' }

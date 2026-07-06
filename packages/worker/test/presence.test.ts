@@ -10,7 +10,7 @@ import {
 } from '../src/do/presence'
 import { hasTimer, minFireAt } from '../src/do/timers'
 import { GRACE_MS, AWAY_TURN_MS, PRESENCE_MS } from '../src/do/constants'
-import { seedLiveGame } from './helpers'
+import { seedLiveGame, authHeaders, mintToken } from './helpers'
 
 function stubFor(name: string) {
   return env.GAME_DO.get(env.GAME_DO.idFromName(name))
@@ -95,12 +95,11 @@ describe('POST /heartbeat', () => {
     return ((await res.json()) as { gameId: string }).gameId
   }
 
-  it('refreshes presence and acks the seat', async () => {
+  it('refreshes presence and acks the seat resolved from the token account', async () => {
     const gameId = await createGame()
     const res = await SELF.fetch(`https://example.com/games/${gameId}/heartbeat`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ seatIndex: 0 }),
+      headers: { 'content-type': 'application/json', ...(await authHeaders('acct-0')) },
     })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ ok: true, seat: 0 })
@@ -114,14 +113,22 @@ describe('POST /heartbeat', () => {
     expect(typeof lastSeen).toBe('number')
   })
 
-  it('rejects an out-of-range seat (400)', async () => {
+  it('rejects an unauthenticated heartbeat (401)', async () => {
     const gameId = await createGame()
     const res = await SELF.fetch(`https://example.com/games/${gameId}/heartbeat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ seatIndex: 9 }),
     })
-    expect(res.status).toBe(400)
-    expect((await res.json()).error).toBe('invalid_seat')
+    expect(res.status).toBe(401)
+  })
+
+  it('rejects a heartbeat from an account that owns no seat (403)', async () => {
+    const gameId = await createGame()
+    const res = await SELF.fetch(`https://example.com/games/${gameId}/heartbeat`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', Authorization: `Bearer ${await mintToken('acct-nobody')}` },
+    })
+    expect(res.status).toBe(403)
+    expect((await res.json()).error).toBe('not_your_seat')
   })
 })

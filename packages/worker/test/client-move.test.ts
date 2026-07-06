@@ -3,6 +3,7 @@ import { it, expect, describe } from 'vitest'
 import type { Card } from '@viota/engine'
 import { toClientMove } from '../src/do/client-move'
 import type { MoveRow } from '../src/do/storage'
+import { authHeaders } from './helpers'
 
 // --- Unit: the projection redacts a pass, keeps play/wild_recycle public ------
 function row(over: Partial<MoveRow>): MoveRow {
@@ -69,15 +70,18 @@ async function createGame(): Promise<string> {
 }
 
 async function sync(gameId: string, seat: number): Promise<{ text: string; body: any }> {
-  const res = await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0&seat=${seat}`)
+  const res = await SELF.fetch(`https://example.com/games/${gameId}/sync?since=0`, {
+    headers: await authHeaders(`acct-${seat}`),
+  })
   const text = await res.text()
   return { text, body: JSON.parse(text) }
 }
 
 async function postMove(gameId: string, body: unknown): Promise<Response> {
+  const seat = (body as { seatIndex: number }).seatIndex
   return SELF.fetch(`https://example.com/games/${gameId}/move`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...(await authHeaders(`acct-${seat}`)) },
     body: JSON.stringify(body),
   })
 }
