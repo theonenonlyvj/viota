@@ -131,6 +131,27 @@ describe('POST /games/:id/move', () => {
     expect((await res.json()).error).toBe('not_your_seat')
   })
 
+  it('does NOT leak an opponent hand: replaying your own clientMoveId against another seat is 403, no view', async () => {
+    const gameId = await createGame()
+    const cm = uuid()
+    // acct-0 makes a real move on seat 0 with a clientMoveId it therefore knows.
+    const first = await postMove(gameId, await firstMoveBody(gameId, 0, { x: 1, y: 0 }, cm))
+    expect((await first.json()).moveIndex).toBe(1)
+
+    // acct-0 replays that same clientMoveId but names seat 1 (acct-1's seat),
+    // trying to coax the duplicate-ack branch into returning seat 1's hand. It is
+    // rejected as not_your_seat with NO view in the body — the leak is closed.
+    const attack = await postMove(
+      gameId,
+      { seatIndex: 1, move: { type: 'pass', trades: [], tradeOrder: [] }, clientMoveId: cm },
+      'acct-0',
+    )
+    expect(attack.status).toBe(403)
+    const body = await attack.json()
+    expect(body.error).toBe('not_your_seat')
+    expect('view' in body).toBe(false)
+  })
+
   it('rejects an out-of-turn move (409 not_your_turn)', async () => {
     const gameId = await createGame()
     // seat 1 (authed as its owner acct-1) moves while it is seat 0's turn

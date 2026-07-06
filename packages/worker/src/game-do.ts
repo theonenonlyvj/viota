@@ -789,6 +789,14 @@ export class GameDO extends DurableObject<Env> {
       return json({ error: 'invalid_seat' }, 400)
     }
 
+    // Defense-in-depth (audit): a caller may only move its OWN seat. The seat is
+    // resolved LIVE from the token and body.seatIndex must match it, so a client
+    // can never even NAME a foreign seat — closing the hand-leak at the HTTP door
+    // in addition to the in-txn ownership check inside applyAndPersist. (AI/floor
+    // moves bypass this path entirely; they call applyAndPersist directly.)
+    const ownSeat = this.repo.seatOwnedBy(auth.accountId)
+    if (!ownSeat || seatIndex !== ownSeat.seat_index) return json({ error: 'not_your_seat' }, 403)
+
     // clientMoveId is a uuid or null (server-minted AI ids never come via HTTP).
     const clientMoveId = body.clientMoveId ?? null
     if (clientMoveId !== null && !(typeof clientMoveId === 'string' && isUuid(clientMoveId))) {

@@ -110,6 +110,31 @@ describe('applyAndPersist', () => {
     })
   })
 
+  it('does NOT leak another seat\'s hand via a duplicate clientMoveId for a seat you do not own (authz precedes idempotency)', async () => {
+    await runInDurableObject(stubFor('apply-leak-guard'), (_i, state: any) => {
+      const { repo, game } = seedScriptedGame(state.storage.sql)
+      const apply = makeApply(state, repo)
+
+      // acct-0 legitimately plays seat 0 with a clientMoveId it therefore knows.
+      const first = apply(step(game, 0, { clientMoveId: 'known-by-acct-0' }))
+      expect(first).toMatchObject({ ok: true, moveIndex: 1 })
+
+      // acct-0 replays its OWN clientMoveId but names seat 1 (owned by acct-1),
+      // trying to get the duplicate branch to hand back seat 1's hand. Ownership
+      // is checked BEFORE idempotency, so it is rejected as not_your_seat and no
+      // per-seat view is ever built — the opponent's hand cannot leak.
+      const attack = apply({
+        seatIndex: 1,
+        move: { type: 'pass', trades: [], tradeOrder: [] },
+        clientMoveId: 'known-by-acct-0',
+        accountId: 'acct-0',
+        now: 2000,
+      })
+      expect(attack).toEqual({ error: 'not_your_seat' })
+      expect('view' in attack).toBe(false)
+    })
+  })
+
   it('allows a server-minted AI move to bypass the account-ownership check', async () => {
     await runInDurableObject(stubFor('apply-ai-bypass'), (_i, state: any) => {
       const { repo, game } = seedScriptedGame(state.storage.sql)

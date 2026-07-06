@@ -61,20 +61,27 @@ export function applyAndPersist(_sql: SqlLike, repo: GameRepository, params: App
   const snapshot = repo.getSnapshot()
   if (!snapshot) return { error: 'no_snapshot' }
 
-  // (b) idempotency — a duplicate clientMoveId is a benign ack with the CURRENT
-  // snapshot. Checked before authz/turn so a reconnect retry never surfaces a
-  // false "not your turn". (SQLite permits multiple NULL client_move_id.)
-  if (params.clientMoveId != null && repo.moveExistsByClientId(params.clientMoveId)) {
-    return { duplicate: true, view: buildClientView(snapshot, params.seatIndex) }
-  }
-
-  // (c) authz — the acting account must own the seat, unless this is a
-  // server-minted AI/floor move.
+  // (b) authz — the acting account must own the seat, unless this is a
+  // server-minted AI/floor move. This MUST precede idempotency: the duplicate
+  // ack (step c) returns a per-seat ClientView, so an unauthorized caller has to
+  // be rejected here — before any hand is built — or replaying a known
+  // clientMoveId against a seat you don't own would leak that seat's full hand.
+  // Ownership is stable across reconnects, so checking it first never
+  // reintroduces a false rejection on a legitimate retry (only the TURN check,
+  // step d, must stay after idempotency for that).
   const seats = repo.getSeats()
   const seat = seats[params.seatIndex]
   if (!seat) return { error: 'not_your_seat' }
   if (!params.byAi && (params.accountId == null || params.accountId !== seat.owner_account_id)) {
     return { error: 'not_your_seat' }
+  }
+
+  // (c) idempotency — a duplicate clientMoveId is a benign ack with the CURRENT
+  // snapshot for the (now authz-verified) seat. Checked before the TURN check so
+  // a reconnect retry never surfaces a false "not your turn". (SQLite permits
+  // multiple NULL client_move_id.)
+  if (params.clientMoveId != null && repo.moveExistsByClientId(params.clientMoveId)) {
+    return { duplicate: true, view: buildClientView(snapshot, params.seatIndex) }
   }
 
   // (c2) reclaim-race guard (must-fix #4) — re-read turn + AI-control from the
