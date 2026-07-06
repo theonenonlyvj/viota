@@ -1,5 +1,6 @@
 import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
+import { handleAuthQuick } from './d1/accounts'
 
 // Cloudflare resolves the Durable Object class from the entry module's exports.
 export { GameDO }
@@ -25,6 +26,11 @@ export default {
 
     const url = new URL(request.url)
     const path = url.pathname
+
+    // POST /auth/quick -> mint-or-authenticate a quick account (D1 accounts).
+    if (request.method === 'POST' && path === '/auth/quick') {
+      return handleAuthQuick(request, env)
+    }
 
     // POST /games -> mint a gameId, init the DO, return { gameId }.
     if (request.method === 'POST' && path === '/games') {
