@@ -1,5 +1,5 @@
 import type { GameRepository, SqlLike, SeatRow } from './storage'
-import { setTimer, clearTimer } from './timers'
+import { setTimer, clearTimer, hasTimer } from './timers'
 import { PRESENCE_MS, GRACE_MS, AWAY_TURN_MS } from './constants'
 
 /**
@@ -60,6 +60,38 @@ export function promoteHost(repo: GameRepository, departingSeat: number, now: nu
   if (!successor) return null
   repo.putMeta({ ...meta, host_seat: successor.seat_index })
   return successor.seat_index
+}
+
+/**
+ * Auto-cover arming for a SILENTLY disconnected on-turn human — the reliable
+ * trigger `webSocketClose` cannot be (a locked phone / dropped network / crashed
+ * tab sends no close, so `markDisconnected` is never reached on the paths that
+ * matter). Presence is heartbeat-based, so "silently gone" == the current seat
+ * is a human whose `last_seen_at` is stale (`isSeatPresent` false). Called from
+ * the always-running paths (the heal self-tick, after each move, and the alarm),
+ * it is IDEMPOTENT and safe to call every tick:
+ *  - arms a `turn` cover deadline ONLY when the current seat is an ABSENT human
+ *    that has no cover timer yet, so a PRESENT player (who keeps heartbeating) is
+ *    never armed and a long "thinking" turn is never interrupted;
+ *  - honors the host's patience (`meta.ai_takeover_ms`, falling back to the fixed
+ *    `AWAY_TURN_MS` when unset) and arms NOTHING for "wait for me" (=== 0);
+ *  - bases the deadline on the seat's `last_seen_at` so a seat that has already
+ *    been gone a while is covered promptly, not granted a fresh full window each
+ *    tick, and never has its deadline pushed out by a later call.
+ * The alarm's `turn` branch re-checks presence and spares a player who returns
+ * before it fires, so arming here can never wrongly cover a reconnecting player.
+ */
+export function armDisconnectCoverIfAbsent(repo: GameRepository, sql: SqlLike, now: number): void {
+  const meta = repo.getMeta()
+  if (!meta || meta.status !== 'active') return
+  const takeover = meta.ai_takeover_ms ?? null
+  if (takeover === 0) return // "wait for me" — never auto-cover
+  const seat = repo.getSeats()[meta.current_seat]
+  if (!seat || seat.owner_type !== 'human' || seat.controlled_by_ai) return // not a human seat to cover
+  if (isSeatPresent(seat, now)) return // connected → never auto-covered
+  if (hasTimer(sql, 'turn', meta.current_seat)) return // already armed — don't push it out
+  const base = seat.last_seen_at ?? now
+  setTimer(sql, 'turn', meta.current_seat, base + (takeover ?? AWAY_TURN_MS))
 }
 
 /** Broadcast surface for auto-cover (a dismissible `ai_cover` toast). */

@@ -1,7 +1,7 @@
 import { env, runInDurableObject, runDurableObjectAlarm } from 'cloudflare:test'
 import { it, expect, describe } from 'vitest'
 import type { SqlLike } from '../src/do/storage'
-import { markDisconnected } from '../src/do/presence'
+import { markDisconnected, armDisconnectCoverIfAbsent } from '../src/do/presence'
 import { hasTimer, minFireAt, rearmAlarm, setTimer } from '../src/do/timers'
 import { AWAY_TURN_MS } from '../src/do/constants'
 import { seedLiveGame } from './helpers'
@@ -56,6 +56,73 @@ describe('configurable AI-takeover (meta.ai_takeover_ms)', () => {
       markDisconnected(repo, sql, 1, NOW) // off turn (current is 0)
       expect(hasTimer(sql, 'grace', 1)).toBe(false)
       expect(hasTimer(sql, 'turn', 1)).toBe(false)
+    })
+  })
+
+  describe('auto-arm on a SILENT disconnect (no markDisconnected / no /leave)', () => {
+    it('arms a cover deadline for an absent on-turn human at last_seen + ai_takeover_ms', async () => {
+      await runInDurableObject(stubFor('auto-arm-absent'), (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        // seat 1 present; seat 0 on turn but never heartbeated (silently gone).
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [1], now: NOW })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 60_000 })
+        expect(hasTimer(sql, 'turn', 0)).toBe(false) // nobody armed it
+        armDisconnectCoverIfAbsent(repo, sql, NOW)
+        expect(hasTimer(sql, 'turn', 0)).toBe(true)
+        expect(minFireAt(sql)).toBe(NOW + 60_000) // host patience honored
+      })
+    })
+
+    it('never arms for a PRESENT (connected) on-turn seat', async () => {
+      await runInDurableObject(stubFor('auto-arm-present'), (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [0], now: NOW })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 60_000 })
+        armDisconnectCoverIfAbsent(repo, sql, NOW)
+        expect(hasTimer(sql, 'turn', 0)).toBe(false) // connected → never auto-covered
+      })
+    })
+
+    it('arms NOTHING for a "wait for me" game (ai_takeover_ms = 0)', async () => {
+      await runInDurableObject(stubFor('auto-arm-wait'), (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [1], now: NOW })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 0 })
+        armDisconnectCoverIfAbsent(repo, sql, NOW)
+        expect(hasTimer(sql, 'turn', 0)).toBe(false)
+      })
+    })
+
+    it('is idempotent: repeated calls do not push the deadline out', async () => {
+      await runInDurableObject(stubFor('auto-arm-idem'), (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [1], now: NOW })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 30_000 })
+        armDisconnectCoverIfAbsent(repo, sql, NOW)
+        const first = minFireAt(sql)
+        armDisconnectCoverIfAbsent(repo, sql, NOW + 10_000) // a later tick
+        expect(minFireAt(sql)).toBe(first) // unchanged — not re-armed
+      })
+    })
+
+    it('END-TO-END: the heal self-tick arms cover for a silently dropped on-turn human (no markDisconnected)', async () => {
+      const stub = stubFor('silent-drop-heal-e2e')
+      const T = Date.now()
+      await runInDurableObject(stub, async (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [1], now: T })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 30_000 })
+        // seat 0 on turn, absent; NOBODY calls markDisconnected or /leave.
+        expect(hasTimer(sql, 'turn', 0)).toBe(false)
+        setTimer(sql, 'heal', -1, T) // heal due now
+        await rearmAlarm(state, sql)
+      })
+      await runDurableObjectAlarm(stub)
+      await runInDurableObject(stub, (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        // the heal tick detected the absent on-turn human and armed its cover.
+        expect(hasTimer(sql, 'turn', 0)).toBe(true)
+      })
     })
   })
 
