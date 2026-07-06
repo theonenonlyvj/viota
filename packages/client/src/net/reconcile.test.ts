@@ -32,7 +32,7 @@ function mockClient(over: Partial<OnlineClient> = {}): OnlineClient {
 
 afterEach(() => vi.restoreAllMocks())
 
-test('runReconcile syncs (replace) then drains the outbox', async () => {
+test('runReconcile drains the outbox BEFORE the authoritative sync', async () => {
   const client = mockClient()
   const applySync = vi.fn()
   await runReconcile({ client, getLocalIndex: () => 2, applySync })
@@ -40,6 +40,30 @@ test('runReconcile syncs (replace) then drains the outbox', async () => {
   expect(applySync).toHaveBeenCalledWith({ moveIndex: 3, snapshot: view, moves: [] })
   expect(client.drainOutbox).toHaveBeenCalledOnce()
   expect(client.reclaim).not.toHaveBeenCalled()
+  // Drain must run first so the trailing sync reflects the drained move (otherwise
+  // the stale pre-move snapshot briefly reverts the board + re-enables input).
+  const drainOrder = (client.drainOutbox as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!
+  const syncOrder = (client.sync as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]!
+  expect(drainOrder).toBeLessThan(syncOrder)
+})
+
+test('a queued move survives a reconcile — the post-drain sync reflects it', async () => {
+  // sync returns the STALE pre-move snapshot until the queued move is drained; the
+  // fresh authoritative snapshot (higher index) only appears after drainOutbox.
+  const preSnapshot: SyncResponse = { moveIndex: 3, snapshot: view, moves: [] }
+  const postSnapshot: SyncResponse = { moveIndex: 4, snapshot: { ...view, turnIndex: 1 }, moves: [] }
+  let drained = false
+  const client = mockClient({
+    drainOutbox: vi.fn().mockImplementation(async () => { drained = true }),
+    sync: vi.fn().mockImplementation(async () => (drained ? postSnapshot : preSnapshot)),
+  })
+  const applySync = vi.fn()
+
+  await runReconcile({ client, getLocalIndex: () => 3, applySync })
+
+  // Because drain ran first, the applied snapshot is the POST-move one (index 4),
+  // not the stale pre-move snapshot that would wipe the queued move.
+  expect(applySync).toHaveBeenLastCalledWith(postSnapshot)
 })
 
 test('runReconcile with withReclaim reclaims first, then syncs + drains', async () => {
