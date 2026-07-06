@@ -2,7 +2,7 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
-import { resolveActiveGameByCode } from './do/archive'
+import { resolveActiveGameByCode, listResumableGames } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
@@ -57,6 +57,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     // POST /claim -> claim device ghost games into the authed account.
     if (request.method === 'POST' && path === '/claim') {
       return handleClaim(request, env)
+    }
+
+    // GET /my-games -> the authed caller's resumable (waiting/active) games with
+    // the seat they own in each. requireAuth (it exposes account-owned data).
+    if (request.method === 'GET' && path === '/my-games') {
+      const auth = await requireAuth(request, env)
+      if (auth instanceof Response) return auth
+      const games = await listResumableGames(env.DB, auth.accountId)
+      return json({ games })
     }
 
     // GET /games/resolve?code=CODE -> resolve a room code to its live gameId via

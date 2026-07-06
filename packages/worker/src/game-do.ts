@@ -13,7 +13,7 @@ import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
 import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, promoteHost, type CoverDeps } from './do/presence'
-import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT, AI_TAKEOVER_ALLOWED_MS, DEFAULT_AI_TAKEOVER_MS } from './do/constants'
+import { PRESENCE_MS, HEAL_MS, PAUSE_ABANDON_MS, GLOBAL_SEAT, AI_TAKEOVER_ALLOWED_MS, DEFAULT_AI_TAKEOVER_MS } from './do/constants'
 import { flushMove, flushGameCreate, flushGameEnd, touchActivity, upsertGamePlayers, setGameStatus, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
 export interface Env {
@@ -411,7 +411,7 @@ export class GameDO extends DurableObject<Env> {
     }
 
     const seen = maxLastSeen(this.repo)
-    if (seen != null && now - seen > ABANDON_MS) {
+    if (seen != null && now - seen > PAUSE_ABANDON_MS) {
       this.repo.putMeta({ ...meta, status: 'abandoned' })
       this.ctx.waitUntil(this.archiveTick(now)) // finalize the abandoned game in D1
       return // stop ticking — the game is abandoned

@@ -36,8 +36,14 @@ export const AI_STEP_MS = 800
 /** Self-tick cadence for the `heal` alarm (abandon check + re-drive safety). */
 export const HEAL_MS = 60_000
 
-/** Zero humans present for this long → the game is marked abandoned. */
+/** Zero humans present for this long → the cron sweep pokes the game's DO. Short
+ *  so a genuinely dead table is re-driven/checked promptly. */
 export const ABANDON_MS = 600_000
+
+/** Zero humans present for THIS long → a live game is truly abandoned. Long
+ *  (~7 days) so a paused game survives "come back tomorrow": zero humans just
+ *  FREEZES the game; it only abandons after this window. */
+export const PAUSE_ABANDON_MS = 7 * 24 * 60 * 60 * 1000
 
 /** Sentinel seat for seat-agnostic timers (e.g. `heal`). The `timers` PK is
  *  (kind, seat); a real seat is >= 0, so -1 never collides. NULL is avoided

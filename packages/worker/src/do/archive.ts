@@ -174,6 +174,34 @@ export async function resolveActiveGameByCode(db: D1Database, code: string): Pro
   return row?.game_uuid ?? null
 }
 
+export type ResumableGame = {
+  game_uuid: string
+  code: string | null
+  status: string
+  player_count: number
+  last_activity_at: number
+  seat_index: number
+}
+
+/**
+ * The caller's RESUMABLE games (waiting or active) with the seat they own in
+ * each, most-recently-active first — the `GET /my-games` "come back to it" list.
+ * Joins the per-seat `game_players` index to the `games` registry on account_id.
+ */
+export async function listResumableGames(db: D1Database, accountId: string): Promise<ResumableGame[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT g.game_uuid, g.code, g.status, g.player_count, g.last_activity_at, gp.seat_index
+       FROM game_players gp
+       JOIN games g ON g.game_uuid = gp.game_uuid
+       WHERE gp.account_id = ? AND g.status IN ('waiting','active')
+       ORDER BY g.last_activity_at DESC`,
+    )
+    .bind(accountId)
+    .all<ResumableGame>()
+  return results
+}
+
 /** argmax of a score vector (first max on ties), or null when empty. */
 export function winnerSeatOf(scores: number[]): number | null {
   if (scores.length === 0) return null

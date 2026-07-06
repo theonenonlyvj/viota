@@ -3,7 +3,7 @@ import { it, expect, describe } from 'vitest'
 import type { SqlLike } from '../src/do/storage'
 import { setTimer, rearmAlarm } from '../src/do/timers'
 import { driveIfAI } from '../src/do/drive'
-import { ABANDON_MS, HEAL_MS, GLOBAL_SEAT } from '../src/do/constants'
+import { ABANDON_MS, PAUSE_ABANDON_MS, HEAL_MS, GLOBAL_SEAT } from '../src/do/constants'
 import { seedLiveGame } from './helpers'
 
 function stubFor(name: string) {
@@ -79,14 +79,14 @@ describe('freeze / resume', () => {
 })
 
 describe('abandon (zero humans for a long window)', () => {
-  it('marks the game abandoned when the heal tick sees nobody present past the window', async () => {
+  it('marks the game abandoned when the heal tick sees nobody present past the LONG (pause) window', async () => {
     const stub = stubFor('abandon')
     const T = Date.now()
     await runInDurableObject(stub, async (_i: any, state: any) => {
       const sql = state.storage.sql as SqlLike
       const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [0], presentSeats: [], now: T })
-      // seat 1 was present long ago (> abandon window); nobody present now.
-      repo.setPresence(1, T - (ABANDON_MS + 60_000))
+      // seat 1 was present long ago (> the 7-day pause window); nobody present now.
+      repo.setPresence(1, T - (PAUSE_ABANDON_MS + 60_000))
       setTimer(sql, 'heal', GLOBAL_SEAT, T + HEAL_MS) // future -> fired by the harness
       await rearmAlarm(state, sql)
     })
@@ -97,6 +97,27 @@ describe('abandon (zero humans for a long window)', () => {
       const sql = state.storage.sql as SqlLike
       const meta = [...sql.exec('SELECT status FROM meta WHERE id=1')][0] as any
       expect(meta.status).toBe('abandoned')
+    })
+  })
+
+  it('does NOT abandon an idle-but-live game before the long window (survives "come back tomorrow")', async () => {
+    const stub = stubFor('no-abandon-paused')
+    const T = Date.now()
+    await runInDurableObject(stub, async (_i: any, state: any) => {
+      const sql = state.storage.sql as SqlLike
+      const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [0], presentSeats: [], now: T })
+      // Idle well past the OLD short window, but far within the 7-day pause window.
+      repo.setPresence(1, T - (ABANDON_MS + 60_000))
+      setTimer(sql, 'heal', GLOBAL_SEAT, T + HEAL_MS)
+      await rearmAlarm(state, sql)
+    })
+
+    await runDurableObjectAlarm(stub)
+
+    await runInDurableObject(stub, (_i: any, state: any) => {
+      const sql = state.storage.sql as SqlLike
+      const meta = [...sql.exec('SELECT status FROM meta WHERE id=1')][0] as any
+      expect(meta.status).toBe('active') // frozen, NOT abandoned
     })
   })
 
