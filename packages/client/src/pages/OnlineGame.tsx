@@ -87,6 +87,7 @@ export default function OnlineGame() {
 
     const detach = attachForegroundReconcile((trigger) => {
       client.heartbeat().catch(() => {})
+      nudge.reopen() // returning to the tab forces an immediate socket reconnect
       reconcile(trigger === 'visible') // silent reclaim on visibility→visible
     })
 
