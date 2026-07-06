@@ -22,6 +22,15 @@ function stubFor(env: Env, gameId: string) {
   return env.GAME_DO.get(env.GAME_DO.idFromName(gameId))
 }
 
+/** JSON content-type + the caller's Authorization (forwarded to a DO that does
+ *  its own requireAuth). Omits Authorization when absent so the DO returns 401. */
+function authHeadersFrom(request: Request): Record<string, string> {
+  const h: Record<string, string> = { 'content-type': 'application/json' }
+  const auth = request.headers.get('Authorization')
+  if (auth) h.Authorization = auth
+  return h
+}
+
 /** A short, human room code (lobby registry key). Excludes ambiguous glyphs. */
 function generateRoomCode(): string {
   const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
@@ -59,16 +68,66 @@ export default {
       return json({ gameId })
     }
 
-    // POST /games -> mint a gameId, init the DO, return { gameId }.
+    // POST /games -> create a game (mint a gameId + room code, init the DO).
+    //
+    // Two protocols:
+    //  - NEW (authed): { playerCount, mode:'solo'|'multiplayer', displayName }.
+    //    host = the token account. 'solo' deals immediately (seat 0 host + AI);
+    //    'multiplayer' opens a status='waiting' room to join by code.
+    //  - LEGACY (no mode): { playerCount, seatOwners } deals immediately with
+    //    explicit fixed seats (backward compat with Phases 1-5).
     if (request.method === 'POST' && path === '/games') {
       const gameId = crypto.randomUUID()
-      let body: unknown
+      let body: any
       try {
         body = await request.json()
       } catch {
         return json({ error: 'bad_json' }, 400)
       }
       const code = generateRoomCode()
+      const mode = body?.mode
+
+      if (mode === 'multiplayer') {
+        // The DO's /create-room does requireAuth (host = token) + validation, and
+        // AWAITS the D1 registry write so an immediate resolve-by-code succeeds.
+        const res = await stubFor(env, gameId).fetch(
+          new Request('https://do/create-room', {
+            method: 'POST',
+            headers: authHeadersFrom(request),
+            body: JSON.stringify({ playerCount: body.playerCount, displayName: body.displayName, gameUuid: gameId, code }),
+          }),
+        )
+        if (!res.ok) return res // surface the DO's 401/validation verbatim
+        return json({ gameId, code }, 201)
+      }
+
+      if (mode === 'solo') {
+        // Seat 0 = the token account; the rest are medium AI (immediate deal).
+        const auth = await requireAuth(request, env)
+        if (auth instanceof Response) return auth
+        const playerCount = body.playerCount
+        if (typeof playerCount !== 'number' || playerCount < 2 || playerCount > 4) {
+          return json({ error: 'invalid_player_count' }, 400)
+        }
+        const displayName = typeof body.displayName === 'string' ? body.displayName : ''
+        const seatOwners = [
+          { ownerType: 'human', accountId: auth.accountId, displayName },
+          ...Array.from({ length: playerCount - 1 }, (_, i) => ({
+            ownerType: 'ai', aiDifficulty: 'medium', controlledByAi: true, displayName: `AI ${i + 2}`,
+          })),
+        ]
+        const res = await stubFor(env, gameId).fetch(
+          new Request('https://do/init', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ playerCount, seatOwners, gameUuid: gameId, code }),
+          }),
+        )
+        if (!res.ok) return res
+        return json({ gameId, code }, 201)
+      }
+
+      // LEGACY: explicit seatOwners, no auth.
       const initBody = JSON.stringify({ ...(body as object), gameUuid: gameId, code })
       const res = await stubFor(env, gameId).fetch(
         new Request('https://do/init', {
