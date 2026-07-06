@@ -47,6 +47,13 @@ export default {
       return json({ gameId }, 201)
     }
 
+    // POST /games/:id/move -> forward to the DO's authoritative move pipeline.
+    const move = path.match(/^\/games\/([^/]+)\/move$/)
+    if (request.method === 'POST' && move) {
+      const gameId = decodeURIComponent(move[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/move', request))
+    }
+
     // GET /games/:id/sync?since=k&seat=s -> forward to the DO (redacted read).
     const sync = path.match(/^\/games\/([^/]+)\/sync$/)
     if (request.method === 'GET' && sync) {
