@@ -2,9 +2,9 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
-import { resolveActiveGameByCode, listResumableGames } from './do/archive'
+import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
-import { ABANDON_MS } from './do/constants'
+import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
 
 // Cloudflare resolves the Durable Object class from the entry module's exports.
@@ -238,21 +238,35 @@ export default {
   },
 
   /**
-   * Cron sweep (1-min trigger). Finds stale active games via the lobby-registry
-   * index — `status='active' AND last_activity_at < now - ABANDON_MS` — and pokes
-   * each DO's `/tick`, which re-drives/abandons it and drains any unflushed
-   * archive rows. Lightweight: one indexed D1 query + a fire-and-forget poke per
-   * stale game (the DO does the real work).
+   * Cron sweep (1-min trigger) over the lobby-registry index. Two passes:
+   *  - stale ACTIVE games (`last_activity_at < now - ABANDON_MS`) → poke each
+   *    DO's `/tick`, which re-drives/abandons it and drains unflushed archive
+   *    rows (the DO's heal path owns the real 7-day abandon decision);
+   *  - stale WAITING rooms (made but never started,
+   *    `last_activity_at < now - WAITING_ABANDON_MS`) → mark them 'abandoned' in
+   *    D1 (so they drop out of resolve-by-code) and poke `/tick` to freeze.
+   * Lightweight: two indexed D1 queries + a fire-and-forget poke per stale game.
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (assertSecret(env)) return // fail-closed if misconfigured
-    const cutoff = Date.now() - ABANDON_MS
-    const { results } = await env.DB.prepare(
+    const now = Date.now()
+
+    const active = await env.DB.prepare(
       `SELECT game_uuid FROM games WHERE status = 'active' AND last_activity_at < ?`,
     )
-      .bind(cutoff)
+      .bind(now - ABANDON_MS)
       .all<{ game_uuid: string }>()
-    for (const { game_uuid } of results) {
+    for (const { game_uuid } of active.results) {
+      ctx.waitUntil(stubFor(env, game_uuid).fetch('https://do/tick', { method: 'POST' }))
+    }
+
+    const waiting = await env.DB.prepare(
+      `SELECT game_uuid FROM games WHERE status = 'waiting' AND last_activity_at < ?`,
+    )
+      .bind(now - WAITING_ABANDON_MS)
+      .all<{ game_uuid: string }>()
+    for (const { game_uuid } of waiting.results) {
+      ctx.waitUntil(setGameStatus(env.DB, game_uuid, 'abandoned', now))
       ctx.waitUntil(stubFor(env, game_uuid).fetch('https://do/tick', { method: 'POST' }))
     }
   },

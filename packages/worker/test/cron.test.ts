@@ -4,7 +4,7 @@ import worker from '../src/index'
 import { GameRepository, type SqlLike } from '../src/do/storage'
 import { applyAndPersist } from '../src/do/apply'
 import { applyD1Schema } from '../src/d1/schema'
-import { ABANDON_MS } from '../src/do/constants'
+import { ABANDON_MS, WAITING_ABANDON_MS } from '../src/do/constants'
 import { seedScriptedGame } from './helpers'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
@@ -89,5 +89,33 @@ describe('cron sweep -> DO /tick', () => {
     await runInDurableObject(stub, (_i: any, state: any) => {
       expect(new GameRepository(state.storage.sql as SqlLike).unflushedOutbox()).toEqual([1])
     })
+  })
+})
+
+describe('cron sweep -> stale waiting-room abandon', () => {
+  it('marks a stale WAITING room (made but never started) abandoned in D1', async () => {
+    const gameUuid = `wait-stale-${crypto.randomUUID()}`
+    await DB()
+      .prepare("INSERT INTO games (game_uuid, status, last_activity_at, player_count, code) VALUES (?, 'waiting', ?, 2, ?)")
+      .bind(gameUuid, Date.now() - WAITING_ABANDON_MS - 5000, 'STALE1')
+      .run()
+
+    await runCron()
+
+    const row = await DB().prepare('SELECT status FROM games WHERE game_uuid = ?').bind(gameUuid).first<any>()
+    expect(row.status).toBe('abandoned') // dropped out of resolve-by-code
+  })
+
+  it('leaves a fresh WAITING room alone (within the 2h window)', async () => {
+    const gameUuid = `wait-fresh-${crypto.randomUUID()}`
+    await DB()
+      .prepare("INSERT INTO games (game_uuid, status, last_activity_at, player_count) VALUES (?, 'waiting', ?, 2)")
+      .bind(gameUuid, Date.now())
+      .run()
+
+    await runCron()
+
+    const row = await DB().prepare('SELECT status FROM games WHERE game_uuid = ?').bind(gameUuid).first<any>()
+    expect(row.status).toBe('waiting')
   })
 })
