@@ -61,6 +61,20 @@ export default {
       return stubFor(env, gameId).fetch(new Request('https://do/heartbeat', request))
     }
 
+    // POST /games/:id/reclaim -> forward to the DO (silent reclaim).
+    const reclaim = path.match(/^\/games\/([^/]+)\/reclaim$/)
+    if (request.method === 'POST' && reclaim) {
+      const gameId = decodeURIComponent(reclaim[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/reclaim', request))
+    }
+
+    // POST /games/:id/veto -> forward to the DO (bounded reversible veto).
+    const veto = path.match(/^\/games\/([^/]+)\/veto$/)
+    if (request.method === 'POST' && veto) {
+      const gameId = decodeURIComponent(veto[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/veto', request))
+    }
+
     // GET /games/:id/sync?since=k -> forward to the DO (redacted read). The
     // Authorization header MUST be forwarded (the DO resolves the seat from it).
     const sync = path.match(/^\/games\/([^/]+)\/sync$/)

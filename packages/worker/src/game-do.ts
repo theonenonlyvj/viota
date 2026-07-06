@@ -101,6 +101,9 @@ export class GameDO extends DurableObject<Env> {
     if (request.method === 'POST' && path === '/heartbeat') {
       return this.handleHeartbeat(request)
     }
+    if (request.method === 'POST' && path === '/reclaim') {
+      return this.handleReclaim(request)
+    }
     if (request.method === 'GET' && path === '/sync') {
       return this.handleSync(request, url)
     }
@@ -482,6 +485,58 @@ export class GameDO extends DurableObject<Env> {
     driveIfAI(this.driveDeps(), this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)
     return json({ ok: true, seat: seatIndex })
+  }
+
+  /**
+   * POST /reclaim — atomic SILENT reclaim (must-fix "reclaim atomic ordered
+   * checklist"). The authed account's own seat is taken back from AI cover in
+   * ONE synchronous critical section, in order:
+   *   1. cancel this seat's grace/turn/ai_step/soft timers;
+   *   2. clear controlled_by_ai;
+   *   3. clear disconnected_at + set last_seen_at = now (a fresh heartbeat);
+   * then re-arm the platform alarm to the new min(fire_at).
+   *
+   * A committed AI move is NEVER rolled back here — the human resumes from the
+   * CURRENT snapshot (that is the veto's job, not reclaim's). If the reclaimed
+   * seat is the current turn, control is now the human's: no auto-cover re-fires
+   * (controlled_by_ai is cleared) and driveIfAI is a no-op for it. The redacted
+   * snapshot is returned LAST.
+   */
+  private async handleReclaim(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+
+    // Owner-first authz: you may only reclaim the seat you own.
+    const seat = this.repo.seatOwnedBy(auth.accountId)
+    if (!seat) return json({ error: 'not_your_seat' }, 403)
+    const seatIndex = seat.seat_index
+
+    const snapshot = this.repo.getSnapshot()
+    if (!snapshot) return json({ error: 'no_snapshot' }, 404)
+
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.onWake(sql, now) // credit any eviction gap + stamp last_processed_at
+
+    // ONE critical section, zero awaits inside — ordered checklist.
+    this.ctx.storage.transactionSync(() => {
+      clearTimer(sql, 'grace', seatIndex)
+      clearTimer(sql, 'turn', seatIndex)
+      clearTimer(sql, 'ai_step', seatIndex)
+      clearTimer(sql, 'soft', seatIndex)
+      this.repo.setControlledByAi(seatIndex, false)
+      this.repo.setPresence(seatIndex, now) // last_seen_at = now, disconnected_at = NULL
+    })
+
+    // Keep the abandon/re-drive self-tick alive, then re-arm the platform alarm.
+    this.ensureHeal(sql, now)
+    await rearmAlarm(this.ctx, sql)
+
+    // Redacted snapshot LAST — the human resumes from the current board.
+    return json({ moveIndex: meta.move_index, snapshot: buildClientView(snapshot, seatIndex) })
   }
 
   private async handleSync(request: Request, url: URL): Promise<Response> {
