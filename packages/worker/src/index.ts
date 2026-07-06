@@ -2,6 +2,8 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
+import { resolveActiveGameByCode } from './do/archive'
+import { requireAuth } from './do/authctx'
 import { ABANDON_MS } from './do/constants'
 
 // Cloudflare resolves the Durable Object class from the entry module's exports.
@@ -44,6 +46,17 @@ export default {
     // POST /claim -> claim device ghost games into the authed account.
     if (request.method === 'POST' && path === '/claim') {
       return handleClaim(request, env)
+    }
+
+    // GET /games/resolve?code=CODE -> resolve a room code to its live gameId via
+    // the D1 lobby registry (there is no API to enumerate DOs). Public: it only
+    // reveals an unguessable gameId; joining still requires auth.
+    if (request.method === 'GET' && path === '/games/resolve') {
+      const code = (url.searchParams.get('code') ?? '').trim().toUpperCase()
+      if (!code) return json({ error: 'missing_code' }, 400)
+      const gameId = await resolveActiveGameByCode(env.DB, code)
+      if (!gameId) return json({ error: 'not_found' }, 404)
+      return json({ gameId })
     }
 
     // POST /games -> mint a gameId, init the DO, return { gameId }.
