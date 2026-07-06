@@ -7,6 +7,8 @@ import { buildClientView } from './do/view'
 import { toClientMove } from './do/client-move'
 import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
+import { driveIfAI, type DriveDeps } from './do/drive'
+import { clearTimer, rearmAlarm } from './do/timers'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -92,6 +94,9 @@ export class GameDO extends DurableObject<Env> {
     if (request.method === 'POST' && path === '/move') {
       return this.handleMove(request)
     }
+    if (request.method === 'POST' && path === '/heartbeat') {
+      return this.handleHeartbeat(request)
+    }
     if (request.method === 'GET' && path === '/sync') {
       return this.handleSync(url)
     }
@@ -115,18 +120,28 @@ export class GameDO extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client })
   }
 
-  /** Seat-agnostic broadcast: "there's news at index N" — never any hand data. */
-  nudge(moveIndex: number): number {
-    const payload = JSON.stringify({ type: 'nudge', moveIndex })
+  /** Generic seat-agnostic fan-out to every attached socket (nudges, toasts). */
+  broadcast(payload: unknown): number {
+    const data = JSON.stringify(payload)
     const sockets = this.ctx.getWebSockets()
     for (const ws of sockets) {
       try {
-        ws.send(payload)
+        ws.send(data)
       } catch {
-        // socket gone; presence handling lands in Phase 4
+        // socket gone; presence rides heartbeats, not socket state
       }
     }
     return sockets.length
+  }
+
+  /** "There's news at index N" — never any hand data. */
+  nudge(moveIndex: number): number {
+    return this.broadcast({ type: 'nudge', moveIndex })
+  }
+
+  /** Deps for the drive loop (the ONLY code path that produces AI moves). */
+  private driveDeps(): DriveDeps {
+    return { ctx: this.ctx, nudge: (i: number) => this.nudge(i) }
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
@@ -249,12 +264,57 @@ export class GameDO extends DurableObject<Env> {
     // Commit-then-broadcast: nudge ONLY after the sync txn returns (committed).
     if ('ok' in result && result.ok) {
       this.nudge(result.moveIndex)
+      // Drive trigger: the mover took their turn (drop their soft deadline), then
+      // let the drive loop carry any now-current AI seat. Re-arm the platform
+      // alarm to the new min after the (possible) AI drive.
+      const now = Date.now()
+      clearTimer(sql, 'soft', seatIndex)
+      driveIfAI(this.driveDeps(), this.repo, sql, now)
+      await rearmAlarm(this.ctx, sql)
       return json(result, 200)
     }
     if ('duplicate' in result) {
       return json(result, 200) // benign ack, no new move -> no nudge
     }
     return json(result, statusForError(result.error))
+  }
+
+  /**
+   * POST /heartbeat {seatIndex} — presence is the SOLE authority for the
+   * drive/freeze decision (must-fix #5). Refresh `last_seen_at`, clear any
+   * disconnect mark, cancel this seat's absence deadlines (a returning human),
+   * and re-run the drive loop (unfreezes a game / hands a covered-but-returned
+   * table back on the next iteration). Full silent reclaim is Phase 4.
+   */
+  private async handleHeartbeat(request: Request): Promise<Response> {
+    let body: { seatIndex?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'bad_json' }, 400)
+    }
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+
+    const seatIndex = body.seatIndex
+    if (
+      typeof seatIndex !== 'number' ||
+      !Number.isInteger(seatIndex) ||
+      seatIndex < 0 ||
+      seatIndex >= meta.player_count
+    ) {
+      return json({ error: 'invalid_seat' }, 400)
+    }
+
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.repo.setPresence(seatIndex, now)
+    clearTimer(sql, 'grace', seatIndex)
+    clearTimer(sql, 'turn', seatIndex)
+    driveIfAI(this.driveDeps(), this.repo, sql, now)
+    await rearmAlarm(this.ctx, sql)
+    return json({ ok: true, seat: seatIndex })
   }
 
   private handleSync(url: URL): Response {
