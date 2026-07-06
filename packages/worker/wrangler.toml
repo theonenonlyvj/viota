@@ -13,6 +13,21 @@ class_name = "GameDO"
 tag = "v1"
 new_sqlite_classes = ["GameDO"]
 
+# D1 analytics archive (Phase 5). The DO SQLite copy is the authoritative live
+# truth; D1 is the durable, queryable, rebuildable archive written through via
+# ctx.waitUntil. Local dev + Miniflare need only this binding (a local SQLite is
+# provisioned automatically). PRODUCTION must run `wrangler d1 create viota` once
+# and paste the REAL database_id below (the placeholder is dev-only).
+[[d1_databases]]
+binding = "DB"
+database_name = "viota"
+database_id = "local-dev-placeholder"
+
+# Cron sweep (1-min is the Cloudflare floor): pokes stale active games so their
+# DO alarm/heal path re-drives/abandons them and drains any unflushed archive.
+[triggers]
+crons = ["* * * * *"]
+
 # JWT_SECRET: local-dev placeholder ONLY, and DELIBERATELY invalid (< 32 bytes)
 # so the request-time secret guard fires (503) if you `wrangler dev` without a
 # real secret. In PRODUCTION this MUST be set via `wrangler secret put JWT_SECRET`
