@@ -96,16 +96,26 @@ No Worker redeploy is needed — a secret update takes effect on the next reques
 ## 7. Smoke test (the real thing, on two devices)
 
 1. Open `<PAGES_URL>` on **two phones** (or two browsers / an incognito window).
-2. Phone A: enter a display name → **Create room** (multiplayer, 2 players). Note
-   the 6-character room **code**.
+2. Phone A (the **host**): enter a display name → **Create room** (multiplayer,
+   2 players). Pick an **AI-takeover** patience (30s / 1 min default / 2 min /
+   5 min / "Wait for me") — this is how long a *disconnected* on-turn seat waits
+   before a medium AI covers it. Note the 6-character room **code**.
 3. Phone B: enter a name → **Join by code** → type A's code.
-4. Either phone: **Start**. Both should see the dealt board, each with only its
-   own hand.
+4. **Only the host (Phone A) sees Start** — Phone B shows "Waiting for host to
+   start…". Phone A: **Start** (if any seat is still open, it confirms the seat
+   will be AI-filled first). Both phones should see the dealt board, each with
+   only its own hand.
 5. Play a few moves back and forth — moves should land on both phones within a
    second (WebSocket nudge; HTTP is the source of truth).
-6. Optional never-stall check: background Phone B mid-game — after ~25–30s its
-   seat is covered by a medium AI and play continues; foreground it and it
-   reclaims its seat (a **veto** on the tab lets it undo the AI's last turn).
+6. Optional never-stall check: background Phone B **on its turn** — after the
+   host's chosen patience (default ~1 min; "Wait for me" = never) its seat is
+   covered by a medium AI and play continues. A *connected* player is never
+   auto-covered. Foreground Phone B and it reclaims its seat (a **veto** on the
+   tab lets it undo the AI's last turn).
+7. Optional pause/resume check: fully close Phone B's tab mid-game, reopen
+   `<PAGES_URL>`, same name → the home screen lists the game under **"Your saved
+   games"**; tap it to drop straight back onto the live board. Games persist
+   server-side (waiting rooms ~2h, in-progress ~7 days).
 
 If step 5 shows CORS errors in the browser console, re-check that `CLIENT_ORIGIN`
 (step 6, prior section) **exactly** equals the origin in the address bar.
