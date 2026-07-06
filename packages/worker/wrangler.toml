@@ -16,12 +16,16 @@ new_sqlite_classes = ["GameDO"]
 # D1 analytics archive (Phase 5). The DO SQLite copy is the authoritative live
 # truth; D1 is the durable, queryable, rebuildable archive written through via
 # ctx.waitUntil. Local dev + Miniflare need only this binding (a local SQLite is
-# provisioned automatically). PRODUCTION must run `wrangler d1 create viota` once
-# and paste the REAL database_id below (the placeholder is dev-only).
+# provisioned automatically).
+#
+# PRODUCTION (see /DEPLOY.md): run `wrangler d1 create viota` ONCE and REPLACE the
+# database_id placeholder below with the real id it prints, then apply the schema
+# via `wrangler d1 migrations apply viota --remote` (migrations/0001_init.sql) or
+# `wrangler d1 execute viota --remote --file=schema/d1.sql`.
 [[d1_databases]]
 binding = "DB"
 database_name = "viota"
-database_id = "local-dev-placeholder"
+database_id = "local-dev-placeholder" # REPLACE with `wrangler d1 create viota` output
 
 # Cron sweep (1-min is the Cloudflare floor): pokes stale active games so their
 # DO alarm/heal path re-drives/abandons them and drains any unflushed archive.
@@ -31,6 +35,15 @@ crons = ["* * * * *"]
 # JWT_SECRET: local-dev placeholder ONLY, and DELIBERATELY invalid (< 32 bytes)
 # so the request-time secret guard fires (503) if you `wrangler dev` without a
 # real secret. In PRODUCTION this MUST be set via `wrangler secret put JWT_SECRET`
-# (a secret binding overrides this [vars] value). Never ship this value.
+# (a 32+ byte random; a secret binding overrides this [vars] value). Never ship
+# this value.
+#
+# CLIENT_ORIGIN is DELIBERATELY UNSET here: unset => CORS falls back to a
+# permissive `*`, which is what you want for local `wrangler dev` (any localhost
+# origin). In PRODUCTION set it to the EXACT Cloudflare Pages URL (e.g.
+# https://viota.pages.dev) via `wrangler secret put CLIENT_ORIGIN` so CORS is
+# pinned to that one origin. workers.dev and pages.dev are DIFFERENT origins — if
+# CLIENT_ORIGIN is left unset in prod, the browser still works (`*`) but the pin
+# is lost; setting it is the intended, safer prod posture. See src/cors.ts.
 [vars]
 JWT_SECRET = "insecure-dev-placeholder"
