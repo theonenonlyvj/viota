@@ -2,6 +2,7 @@ import type { Card, GameState, RegularCard } from '@viota/engine'
 import { posKey } from '@viota/engine'
 import type { MovePayload } from '../src/do/moves'
 import type { SeatOwner } from '../src/do/init'
+import { runMigrations, GameRepository, type SqlLike } from '../src/do/storage'
 
 // --- Deterministic card fixtures --------------------------------------------
 export const WILD: Card = { kind: 'wild' }
@@ -64,4 +65,43 @@ export function buildScriptedGame(): ScriptedGame {
   ]
 
   return { initialState, seatOwners, script }
+}
+
+/**
+ * Seed the deterministic scripted game directly into a DO's SQLite: migrate,
+ * write the immutable initial_state + snapshot + meta (current_seat = 0) + both
+ * human seats. Returns the repo + the scripted game so a test can drive
+ * applyAndPersist against known-legal moves.
+ */
+export function seedScriptedGame(sql: SqlLike): { repo: GameRepository; game: ScriptedGame } {
+  runMigrations(sql)
+  const repo = new GameRepository(sql)
+  const game = buildScriptedGame()
+
+  repo.putInitialState(game.initialState)
+  repo.putSnapshot(game.initialState)
+  repo.putMeta({
+    move_index: 0,
+    status: 'active',
+    current_seat: game.initialState.turnIndex,
+    player_count: game.seatOwners.length,
+    engine_version: 'viota-engine@test',
+    game_uuid: 'scripted-1',
+  })
+  game.seatOwners.forEach((o, i) => {
+    repo.putSeat({
+      seat_index: i,
+      owner_account_id: o.accountId ?? null,
+      ghost_id: null,
+      owner_type: o.ownerType,
+      display_name: o.displayName ?? null,
+      ai_difficulty: o.aiDifficulty ?? null,
+      controlled_by_ai: o.controlledByAi ?? o.ownerType === 'ai',
+      disconnected_at: null,
+      last_seen_at: null,
+      final_score: null,
+    })
+  })
+
+  return { repo, game }
 }
