@@ -16,6 +16,12 @@ test('a nudge at or below the local index does NOT sync', () => {
   expect(sync).not.toHaveBeenCalled()
 })
 
+test('host_changed fans out to onHostChanged', () => {
+  const onHostChanged = vi.fn()
+  handleServerFrame({ type: 'host_changed', hostSeat: 2 }, { getLocalIndex: () => 0, sync: vi.fn(), onHostChanged })
+  expect(onHostChanged).toHaveBeenCalledWith(2)
+})
+
 test('ai_cover and veto fan out to their callbacks; veto re-syncs', () => {
   const sync = vi.fn()
   const onAiCover = vi.fn()

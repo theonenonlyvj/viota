@@ -113,10 +113,12 @@ test('joinOnlineGame throws when the room is full (409)', async () => {
   await expect(joinOnlineGame('http://sv', { code: 'ABCDEF', displayName: 'Bob' })).rejects.toThrow(/full or already started/)
 })
 
-test('fetchRoom returns the waiting roster, and reports started once active', async () => {
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({ status: 'waiting', playerCount: 3, code: 'ABCDEF', seats: waitingSeats })))
+test('fetchRoom returns the waiting roster (incl. hostSeat/openSeats/aiTakeoverMs), and reports started once active', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({
+    status: 'waiting', playerCount: 3, code: 'ABCDEF', hostSeat: 1, openSeats: 1, aiTakeoverMs: 0, seats: waitingSeats,
+  })))
   const waiting = await fetchRoom('http://sv', 'g1')
-  expect(waiting).toMatchObject({ status: 'waiting', playerCount: 3, code: 'ABCDEF' })
+  expect(waiting).toMatchObject({ status: 'waiting', playerCount: 3, code: 'ABCDEF', hostSeat: 1, openSeats: 1, aiTakeoverMs: 0 })
 
   vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(okJson({ moveIndex: 0, snapshot: {}, moves: [] })))
   const started = await fetchRoom('http://sv', 'g1')
@@ -133,4 +135,9 @@ test('startRoom POSTs /start and leaveGame POSTs /leave', async () => {
   vi.stubGlobal('fetch', leaveMock)
   await leaveGame('http://sv', 'g1')
   expect(leaveMock.mock.calls[0]![0]).toBe('http://sv/games/g1/leave')
+})
+
+test('startRoom surfaces a not_host error on 403', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ error: 'not_host' }, 403)))
+  await expect(startRoom('http://sv', 'g1')).rejects.toThrow(/not_host/)
 })
