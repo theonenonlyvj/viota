@@ -3,9 +3,10 @@ import { initGame } from '@viota/engine'
 import { assertSecret } from './auth'
 import { requireAuth, authenticateToken } from './do/authctx'
 import { performVeto } from './do/veto'
-import { runMigrations, GameRepository, type SqlLike } from './do/storage'
-import { initGameForOnline, type SeatOwner } from './do/init'
-import { buildClientView } from './do/view'
+import { runMigrations, GameRepository, type SqlLike, type SeatRow } from './do/storage'
+import { initGameForOnline, createWaitingRoom, dealInto, type SeatOwner } from './do/init'
+import { buildClientView, buildWaitingRoomView } from './do/view'
+import { sanitizeDisplayName } from './d1/accounts'
 import { toClientMove } from './do/client-move'
 import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
@@ -13,7 +14,7 @@ import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
 import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, type CoverDeps } from './do/presence'
 import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
-import { flushMove, flushGameCreate, flushGameEnd, touchActivity, winnerSeatOf, type GameArchiveRow } from './do/archive'
+import { flushMove, flushGameCreate, flushGameEnd, touchActivity, upsertGamePlayers, setGameStatus, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -99,6 +100,18 @@ export class GameDO extends DurableObject<Env> {
 
     if (request.method === 'POST' && path === '/init') {
       return this.handleInit(request)
+    }
+    if (request.method === 'POST' && path === '/create-room') {
+      return this.handleCreateRoom(request)
+    }
+    if (request.method === 'POST' && path === '/join') {
+      return this.handleJoin(request)
+    }
+    if (request.method === 'POST' && path === '/start') {
+      return this.handleStart(request)
+    }
+    if (request.method === 'POST' && path === '/leave') {
+      return this.handleLeave(request)
     }
     if (request.method === 'POST' && path === '/move') {
       return this.handleMove(request)
@@ -243,6 +256,32 @@ export class GameDO extends DurableObject<Env> {
     }
     try {
       await flushGameCreate(this.env.DB, game, this.repo.getSeats())
+    } catch {
+      /* the cron re-touches; a missing archive row never stalls the live game */
+    }
+  }
+
+  /** Write-through a seat change (a /join) to the D1 game_players index + touch
+   *  the registry activity. Best-effort; the DO SQLite copy is authoritative. */
+  private async archiveSeats(now: number): Promise<void> {
+    const meta = this.repo.getMeta()
+    if (!meta) return
+    try {
+      await upsertGamePlayers(this.env.DB, meta.game_uuid, this.repo.getSeats())
+      await touchActivity(this.env.DB, meta.game_uuid, now)
+    } catch {
+      /* best-effort; the cron re-touches */
+    }
+  }
+
+  /** Sync the D1 registry when a room goes live at /start: flip the status to
+   *  'active' and upsert the final roster (AI fills + joiners). Best-effort. */
+  private async archiveGameStart(now: number): Promise<void> {
+    const meta = this.repo.getMeta()
+    if (!meta) return
+    try {
+      await setGameStatus(this.env.DB, meta.game_uuid, meta.status, now) // 'active'
+      await upsertGamePlayers(this.env.DB, meta.game_uuid, this.repo.getSeats())
     } catch {
       /* the cron re-touches; a missing archive row never stalls the live game */
     }
@@ -495,6 +534,195 @@ export class GameDO extends DurableObject<Env> {
     this.ctx.waitUntil(this.archiveGameCreate(Date.now(), code))
 
     return json({ gameUuid: meta.game_uuid, moveIndex: meta.move_index, playerCount }, 201)
+  }
+
+  /**
+   * POST /create-room — the multiplayer waiting-room create. The Worker forwards
+   * here with the host's Authorization; `requireAuth` resolves the host account
+   * from the token (never a body field). The room is written status='waiting'
+   * (seat 0 = host, the rest 'open') and NO deal happens. The D1 registry row is
+   * written SYNCHRONOUSLY (awaited) before returning so a friend's immediate
+   * GET /resolve?code= finds it.
+   */
+  private async handleCreateRoom(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    let body: { playerCount?: number; displayName?: unknown; gameUuid?: string; engineVersion?: string; code?: string }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      return json({ error: 'bad_json' }, 400)
+    }
+
+    const playerCount = body.playerCount
+    if (typeof playerCount !== 'number' || playerCount < 2 || playerCount > 4) {
+      return json({ error: 'invalid_player_count' }, 400)
+    }
+    const hostDisplayName = sanitizeDisplayName(body.displayName)
+
+    const { meta } = createWaitingRoom(this.repo, {
+      playerCount,
+      hostAccountId: auth.accountId,
+      hostDisplayName: hostDisplayName.length > 0 ? hostDisplayName : null,
+      gameUuid: body.gameUuid,
+      engineVersion: body.engineVersion,
+      code: typeof body.code === 'string' ? body.code : null,
+    })
+
+    // The lobby-registry row MUST be resolvable immediately (a friend may join
+    // within seconds) — AWAIT this D1 write, unlike the move archive.
+    await this.archiveGameCreate(Date.now(), meta.code)
+
+    return json(
+      { gameId: meta.game_uuid, code: meta.code, playerCount: meta.player_count, room: buildWaitingRoomView(this.repo) },
+      201,
+    )
+  }
+
+  /**
+   * POST /join — claim a seat in a `'waiting'` room. requireAuth; the seat is
+   * bound to the token account. Idempotent: an account already holding a seat
+   * gets it back. Claims the LOWEST 'open' seat (or an explicit open `seatIndex`)
+   * and flips it to a human seat. 409 if the room is full or not waiting.
+   */
+  private async handleJoin(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    let body: { seatIndex?: unknown; displayName?: unknown }
+    try {
+      body = (await request.json()) as typeof body
+    } catch {
+      body = {}
+    }
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+    if (meta.status !== 'waiting') return json({ error: 'not_waiting' }, 409)
+
+    const seats = this.repo.getSeats()
+
+    // Idempotent: an account already seated gets the SAME seat back.
+    const already = seats.find((s) => s.owner_account_id === auth.accountId)
+    if (already) return json({ seatIndex: already.seat_index, room: buildWaitingRoomView(this.repo) })
+
+    // Resolve the target: an explicit OPEN seatIndex, else the lowest open seat.
+    let target: SeatRow | undefined
+    if (typeof body.seatIndex === 'number' && Number.isInteger(body.seatIndex)) {
+      const s = seats[body.seatIndex]
+      if (!s || s.owner_type !== 'open') return json({ error: 'seat_unavailable' }, 409)
+      target = s
+    } else {
+      target = seats.find((s) => s.owner_type === 'open')
+    }
+    if (!target) return json({ error: 'room_full' }, 409)
+
+    const displayName = sanitizeDisplayName(body.displayName)
+    // Single synchronous span (no await between the read above and this write) so
+    // two racing joins can never resolve to the same seat.
+    this.ctx.storage.transactionSync(() => {
+      this.repo.putSeat({
+        ...target!,
+        owner_type: 'human',
+        owner_account_id: auth.accountId,
+        display_name: displayName.length > 0 ? displayName : null,
+        controlled_by_ai: false,
+      })
+    })
+
+    // Write-through the joined seat to the D1 game_players index (non-blocking).
+    this.ctx.waitUntil(this.archiveSeats(Date.now()))
+
+    return json({ seatIndex: target.seat_index, room: buildWaitingRoomView(this.repo) })
+  }
+
+  /**
+   * POST /start — deal a waiting room and go live. requireAuth; the caller must
+   * own a seat. Requires >=2 HUMAN seats (no host-only gate — ANY seated player
+   * may start). Remaining 'open' seats are filled with medium AI, then `dealInto`
+   * runs the engine deal WITHOUT clobbering the claimed seat owners. Flips the D1
+   * registry to 'active', kicks the drive loop (in case the opening seat is AI),
+   * and broadcasts `{type:'started'}` so waiting joiners auto-navigate.
+   */
+  private async handleStart(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+    if (meta.status !== 'waiting') return json({ error: 'not_waiting' }, 409)
+
+    const ownSeat = this.repo.seatOwnedBy(auth.accountId)
+    if (!ownSeat) return json({ error: 'not_your_seat' }, 403)
+
+    const humanCount = this.repo.getSeats().filter((s) => s.owner_type === 'human').length
+    if (humanCount < 2) return json({ error: 'need_two_humans' }, 409)
+
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.onWake(sql, now)
+
+    // Fill open seats with medium AI + deal — one synchronous span. The starter
+    // is marked present so the (rare) opening-AI-seat path isn't frozen.
+    this.ctx.storage.transactionSync(() => {
+      for (const s of this.repo.getSeats()) {
+        if (s.owner_type === 'open') {
+          this.repo.putSeat({
+            ...s,
+            owner_type: 'ai',
+            controlled_by_ai: true,
+            ai_difficulty: 'medium',
+            display_name: s.display_name ?? `AI ${s.seat_index + 1}`,
+          })
+        }
+      }
+      dealInto(this.repo, meta.player_count)
+      this.repo.setPresence(ownSeat.seat_index, now)
+    })
+
+    this.ensureHeal(sql, now)
+    driveIfAI(this.driveDeps(), this.repo, sql, now)
+    await rearmAlarm(this.ctx, sql)
+
+    // Flip the D1 registry to active + sync the final roster (AI fills + joiners).
+    this.ctx.waitUntil(this.archiveGameStart(now))
+    this.ctx.waitUntil(this.archiveTick(now))
+
+    // Waiting joiners are polling / listening — nudge them into the game.
+    this.broadcast({ type: 'started', moveIndex: 0 })
+
+    const snapshot = this.repo.getSnapshot()
+    if (!snapshot) return json({ error: 'no_snapshot' }, 500)
+    return json({ moveIndex: this.repo.getMeta()!.move_index, snapshot: buildClientView(snapshot, ownSeat.seat_index) })
+  }
+
+  /**
+   * POST /leave — intentional leave. requireAuth; the caller's OWN seat is
+   * AI-covered IMMEDIATELY (skips the grace window a silent socket drop waits
+   * for) and an `ai_cover` toast is broadcast. The seat stays owned so the player
+   * can reclaim it if they return.
+   */
+  private async handleLeave(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+
+    const seat = this.repo.seatOwnedBy(auth.accountId)
+    if (!seat) return json({ error: 'not_your_seat' }, 403)
+
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.onWake(sql, now)
+    // Instant cover (skip grace): flip controlled_by_ai, arm an immediate drive.
+    this.ctx.storage.transactionSync(() => autoCover(this.coverDeps(), this.repo, sql, seat.seat_index, now))
+    this.ensureHeal(sql, now)
+    driveIfAI(this.driveDeps(), this.repo, sql, now)
+    await rearmAlarm(this.ctx, sql)
+    this.ctx.waitUntil(this.archiveTick(now))
+    return json({ ok: true, seat: seat.seat_index })
   }
 
   /**

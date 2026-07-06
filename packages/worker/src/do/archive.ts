@@ -97,6 +97,35 @@ export async function flushGameCreate(db: D1Database, game: GameArchiveRow, seat
   if (stmts.length) await db.batch(stmts)
 }
 
+/**
+ * Upsert per-seat `game_players` rows, UPDATING owner/name on conflict (unlike
+ * the create-time `flushGameCreate` which DOes NOTHING). Used by /join (a seat
+ * changed open->human) and /start (open->ai fills) so the analytics index tracks
+ * the live roster. The DO SQLite copy stays authoritative regardless.
+ */
+export async function upsertGamePlayers(db: D1Database, gameUuid: string, seats: SeatRow[]): Promise<void> {
+  const stmts = seats.map((s) =>
+    db
+      .prepare(
+        `INSERT INTO game_players
+           (game_uuid, seat_index, account_id, ghost_id, owner_type, display_name, final_score)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(game_uuid, seat_index) DO UPDATE SET
+           account_id = excluded.account_id,
+           ghost_id = excluded.ghost_id,
+           owner_type = excluded.owner_type,
+           display_name = excluded.display_name`,
+      )
+      .bind(gameUuid, s.seat_index, s.owner_account_id, s.ghost_id, s.owner_type, s.display_name, s.final_score),
+  )
+  if (stmts.length) await db.batch(stmts)
+}
+
+/** Flip the games registry row status (e.g. 'waiting' -> 'active' at /start). */
+export async function setGameStatus(db: D1Database, gameUuid: string, status: string, ts: number): Promise<void> {
+  await db.prepare(`UPDATE games SET status = ?, last_activity_at = ? WHERE game_uuid = ?`).bind(status, ts, gameUuid).run()
+}
+
 export type GameEnd = {
   status: string
   outcome: string
