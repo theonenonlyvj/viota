@@ -28,7 +28,7 @@ it('migrations are idempotent (running twice is clean, one version row)', async 
     const sql = state.storage.sql
     runMigrations(sql)
     const repo = new GameRepository(sql)
-    repo.putMeta({ move_index: 0, status: 'active', current_seat: 0, player_count: 2, engine_version: 'e1', game_uuid: 'g-1' })
+    repo.putMeta({ move_index: 0, status: 'active', current_seat: 0, player_count: 2, engine_version: 'e1', game_uuid: 'g-1', code: null })
 
     // Second run must not throw, must not duplicate the version row, must not lose data.
     runMigrations(sql)
@@ -71,7 +71,7 @@ it('repository round-trips meta, initial_state (immutable), snapshot, seats, mov
     const repo = new GameRepository(sql)
 
     // meta
-    repo.putMeta({ move_index: 0, status: 'active', current_seat: 0, player_count: 2, engine_version: 'engine-test', game_uuid: 'uuid-xyz' })
+    repo.putMeta({ move_index: 0, status: 'active', current_seat: 0, player_count: 2, engine_version: 'engine-test', game_uuid: 'uuid-xyz', code: null })
     expect(repo.getMeta()).toMatchObject({ player_count: 2, engine_version: 'engine-test', game_uuid: 'uuid-xyz', status: 'active' })
 
     // initial_state is write-once / immutable
