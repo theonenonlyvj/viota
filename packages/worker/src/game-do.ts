@@ -12,7 +12,7 @@ import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
-import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, type CoverDeps } from './do/presence'
+import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, promoteHost, type CoverDeps } from './do/presence'
 import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
 import { flushMove, flushGameCreate, flushGameEnd, touchActivity, upsertGamePlayers, setGameStatus, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
@@ -642,12 +642,13 @@ export class GameDO extends DurableObject<Env> {
   }
 
   /**
-   * POST /start — deal a waiting room and go live. requireAuth; the caller must
-   * own a seat. Requires >=2 HUMAN seats (no host-only gate — ANY seated player
-   * may start). Remaining 'open' seats are filled with medium AI, then `dealInto`
-   * runs the engine deal WITHOUT clobbering the claimed seat owners. Flips the D1
-   * registry to 'active', kicks the drive loop (in case the opening seat is AI),
-   * and broadcasts `{type:'started'}` so waiting joiners auto-navigate.
+   * POST /start — deal a waiting room and go live. requireAuth; ONLY the host
+   * seat (`meta.host_seat`) may start (else 403 `not_host`). Requires >=2 HUMAN
+   * seats. Remaining 'open' seats are filled with medium AI (the host's choice),
+   * then `dealInto` runs the engine deal WITHOUT clobbering the claimed seat
+   * owners. Flips the D1 registry to 'active', kicks the drive loop (in case the
+   * opening seat is AI), and broadcasts `{type:'started'}` so waiting joiners
+   * auto-navigate.
    */
   private async handleStart(request: Request): Promise<Response> {
     const auth = await requireAuth(request, this.env)
@@ -659,6 +660,8 @@ export class GameDO extends DurableObject<Env> {
 
     const ownSeat = this.repo.seatOwnedBy(auth.accountId)
     if (!ownSeat) return json({ error: 'not_your_seat' }, 403)
+    // Host-only start: only the seat holding the host role can deal the room.
+    if (ownSeat.seat_index !== (meta.host_seat ?? 0)) return json({ error: 'not_host' }, 403)
 
     const humanCount = this.repo.getSeats().filter((s) => s.owner_type === 'human').length
     if (humanCount < 2) return json({ error: 'need_two_humans' }, 409)
@@ -721,7 +724,14 @@ export class GameDO extends DurableObject<Env> {
     const now = Date.now()
     this.onWake(sql, now)
     // Instant cover (skip grace): flip controlled_by_ai, arm an immediate drive.
-    this.ctx.storage.transactionSync(() => autoCover(this.coverDeps(), this.repo, sql, seat.seat_index, now))
+    // In a WAITING room, if the host is the one leaving, promote the host role to
+    // the next present human so the room isn't left un-startable — one span.
+    let newHost: number | null = null
+    this.ctx.storage.transactionSync(() => {
+      autoCover(this.coverDeps(), this.repo, sql, seat.seat_index, now)
+      if (meta.status === 'waiting') newHost = promoteHost(this.repo, seat.seat_index, now)
+    })
+    if (newHost != null) this.broadcast({ type: 'host_changed', hostSeat: newHost })
     this.ensureHeal(sql, now)
     driveIfAI(this.driveDeps(), this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)

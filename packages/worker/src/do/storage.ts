@@ -170,8 +170,18 @@ const migrateV4: Migration = (sql) => {
   sql.exec(`ALTER TABLE meta_v4 RENAME TO meta`)
 }
 
+/**
+ * v5: `meta.host_seat` — the seat index of the room HOST (the one player allowed
+ * to press Start). The room creator is seat 0, so the column defaults to 0. A
+ * simple additive `ALTER TABLE ... ADD COLUMN` (no CHECK to rebuild), version-
+ * gated so it applies exactly once.
+ */
+const migrateV5: Migration = (sql) => {
+  sql.exec(`ALTER TABLE meta ADD COLUMN host_seat INTEGER NOT NULL DEFAULT 0`)
+}
+
 /** Ordered migration list. Index i is schema version (i+1). */
-export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3, migrateV4]
+export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3, migrateV4, migrateV5]
 
 /**
  * Idempotent forward migrator. Safe to run on every DO boot: creates the
@@ -204,6 +214,10 @@ export type MetaRow = {
   game_uuid: string
   /** The human room code (multiplayer waiting rooms); null for solo/legacy games. */
   code: string | null
+  /** The seat index of the room host (the only seat allowed to /start). The room
+   *  creator is seat 0, so this defaults to 0. Optional on WRITE (defaults to 0);
+   *  getMeta always returns a concrete number. */
+  host_seat?: number
 }
 
 export type SeatRow = {
@@ -255,13 +269,14 @@ export class GameRepository {
       engine_version: String(r.engine_version),
       game_uuid: String(r.game_uuid),
       code: r.code == null ? null : String(r.code),
+      host_seat: r.host_seat == null ? 0 : Number(r.host_seat),
     }
   }
 
   putMeta(m: MetaRow): void {
     this.sql.exec(
-      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid, code)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid, code, host_seat)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          move_index = excluded.move_index,
          status = excluded.status,
@@ -269,8 +284,9 @@ export class GameRepository {
          player_count = excluded.player_count,
          engine_version = excluded.engine_version,
          game_uuid = excluded.game_uuid,
-         code = excluded.code`,
-      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid, m.code,
+         code = excluded.code,
+         host_seat = excluded.host_seat`,
+      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid, m.code, m.host_seat ?? 0,
     )
   }
 

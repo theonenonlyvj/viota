@@ -1,9 +1,10 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect, beforeAll } from 'vitest'
-import { authHeaders } from './helpers'
+import { authHeaders, mintToken } from './helpers'
 import { applyD1Schema } from '../src/d1/schema'
 import { runMigrations, GameRepository } from '../src/do/storage'
 import { createWaitingRoom } from '../src/do/init'
+import { buildWaitingRoomView } from '../src/do/view'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
 function stubFor(name: string) { return env.GAME_DO.get(env.GAME_DO.idFromName(name)) }
@@ -70,11 +71,87 @@ it('POST /start deals a 2-human room, returns the redacted view, fills AI, flips
   expect(row.status).toBe('active')
 })
 
-it('any seated player (not just the host) can start — no host-only gate', async () => {
+it('only the HOST can start: a non-host seated joiner gets 403 not_host', async () => {
   const gameId = crypto.randomUUID()
   await seedRoom(gameId, 3, { humans: [0, 1] })
-  const res = await start(gameId, 'human-1') // a joiner starts
+  const res = await start(gameId, 'human-1') // a joiner (seat 1, not host) tries to start
+  expect(res.status).toBe(403)
+  expect(((await res.json()) as any).error).toBe('not_host')
+  // the host (seat 0) can still start it
+  expect((await start(gameId, 'host')).status).toBe(200)
+})
+
+it('the waiting-room view exposes hostSeat + the open-seat count', async () => {
+  const gameId = crypto.randomUUID()
+  await seedRoom(gameId, 4, { humans: [0, 1] }) // 2 human, 2 open
+  const room = await runInDurableObject(stubFor(gameId), (_i, state: any) =>
+    buildWaitingRoomView(new GameRepository(state.storage.sql)),
+  )
+  expect(room.hostSeat).toBe(0)
+  expect(room.openSeats).toBe(2)
+})
+
+it('host promotion: when the host leaves the waiting room, host_seat moves to the next present human + host_changed broadcast', async () => {
+  const gameId = crypto.randomUUID()
+  await seedRoom(gameId, 3, { humans: [0, 1] })
+  // seat 1 (human-1) heartbeats so it counts as a PRESENT human successor.
+  await SELF.fetch(`https://example.com/games/${gameId}/heartbeat`, {
+    method: 'POST',
+    headers: await authHeaders('human-1'),
+  })
+
+  // Open a socket authed as seat 1 to observe the host_changed broadcast.
+  const up = await SELF.fetch(`https://example.com/games/${gameId}/socket`, { headers: { Upgrade: 'websocket' } })
+  const ws = up.webSocket!
+  ws.accept()
+  const frames: any[] = []
+  const waiters: ((v: any) => void)[] = []
+  ws.addEventListener('message', (e) => {
+    const v = JSON.parse(String((e as MessageEvent).data))
+    const w = waiters.shift()
+    if (w) w(v)
+    else frames.push(v)
+  })
+  const next = () => new Promise<any>((r) => { const q = frames.shift(); if (q !== undefined) r(q); else waiters.push(r) })
+  ws.send(JSON.stringify({ type: 'auth', token: await mintToken('human-1') }))
+  expect((await next()).type).toBe('auth_ok')
+
+  // The host (seat 0) leaves.
+  const res = await SELF.fetch(`https://example.com/games/${gameId}/leave`, {
+    method: 'POST',
+    headers: await authHeaders('host'),
+  })
   expect(res.status).toBe(200)
+
+  // The leave broadcasts an ai_cover toast (covered host seat) AND host_changed;
+  // find the host_changed frame among them.
+  let hc: any = null
+  for (let i = 0; i < 3 && !hc; i++) {
+    const f = await next()
+    if (f.type === 'host_changed') hc = f
+  }
+  expect(hc).toEqual({ type: 'host_changed', hostSeat: 1 })
+
+  // host_seat is now seat 1, and seat 1 (human-1) can start.
+  const hostSeat = await runInDurableObject(stubFor(gameId), (_i, state: any) =>
+    new GameRepository(state.storage.sql).getMeta()!.host_seat,
+  )
+  expect(hostSeat).toBe(1)
+  expect((await start(gameId, 'human-1')).status).toBe(200)
+  ws.close(1000, 'done')
+})
+
+it('host promotion: no eligible present human -> host_seat is left unchanged', async () => {
+  const gameId = crypto.randomUUID()
+  await seedRoom(gameId, 3, { humans: [0, 1] }) // seat 1 present? no heartbeat -> not present
+  await SELF.fetch(`https://example.com/games/${gameId}/leave`, {
+    method: 'POST',
+    headers: await authHeaders('host'),
+  })
+  const hostSeat = await runInDurableObject(stubFor(gameId), (_i, state: any) =>
+    new GameRepository(state.storage.sql).getMeta()!.host_seat,
+  )
+  expect(hostSeat).toBe(0) // unchanged (seat 1 never heartbeated -> not a present successor)
 })
 
 it('POST /start 409s with fewer than 2 humans', async () => {
