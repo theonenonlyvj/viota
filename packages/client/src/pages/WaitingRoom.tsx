@@ -60,13 +60,15 @@ export default function WaitingRoom() {
     poll()
     const id = setInterval(poll, POLL_MS)
 
-    // The socket is a snappier signal than the 2s poll: a host_changed frame
-    // re-checks who sees Start. The poll remains the fallback.
+    // The socket is a snappier signal than the 2s poll: a `started` frame
+    // navigates joiners into the game the instant the host deals, and a
+    // host_changed frame re-checks who sees Start. The poll remains the fallback.
     const nudge = createNudgeChannel(SERVER_URL, gameId, {
       getToken,
       getLocalIndex: () => 0,
       sync: () => { /* the component's own poll is the fallback */ },
       onHostChanged: (h) => { if (active) setHostSeat(h) },
+      onStarted: () => { if (active) navigate('/game/online') },
     })
 
     return () => { active = false; clearInterval(id); nudge.close() }

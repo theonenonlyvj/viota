@@ -22,6 +22,12 @@ test('host_changed fans out to onHostChanged', () => {
   expect(onHostChanged).toHaveBeenCalledWith(2)
 })
 
+test('started fans out to onStarted', () => {
+  const onStarted = vi.fn()
+  handleServerFrame({ type: 'started', moveIndex: 0 }, { getLocalIndex: () => 0, sync: vi.fn(), onStarted })
+  expect(onStarted).toHaveBeenCalledWith(0)
+})
+
 test('ai_cover and veto fan out to their callbacks; veto re-syncs', () => {
   const sync = vi.fn()
   const onAiCover = vi.fn()
