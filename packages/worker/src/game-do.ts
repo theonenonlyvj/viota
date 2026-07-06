@@ -2,6 +2,7 @@ import { DurableObject } from 'cloudflare:workers'
 import { initGame } from '@viota/engine'
 import { assertSecret } from './auth'
 import { requireAuth } from './do/authctx'
+import { performVeto } from './do/veto'
 import { runMigrations, GameRepository, type SqlLike } from './do/storage'
 import { initGameForOnline, type SeatOwner } from './do/init'
 import { buildClientView } from './do/view'
@@ -103,6 +104,9 @@ export class GameDO extends DurableObject<Env> {
     }
     if (request.method === 'POST' && path === '/reclaim') {
       return this.handleReclaim(request)
+    }
+    if (request.method === 'POST' && path === '/veto') {
+      return this.handleVeto(request)
     }
     if (request.method === 'GET' && path === '/sync') {
       return this.handleSync(request, url)
@@ -537,6 +541,48 @@ export class GameDO extends DurableObject<Env> {
 
     // Redacted snapshot LAST — the human resumes from the current board.
     return json({ moveIndex: meta.move_index, snapshot: buildClientView(snapshot, seatIndex) })
+  }
+
+  /**
+   * POST /veto — the bounded reversible veto (spec §4). Owner-first authz (you
+   * veto only the seat you own -> 403). In ONE transactionSync span, `performVeto`
+   * reverts the maximal trailing AI run on that seat (only if it forms the global
+   * trailing run, else nothing is reverted), rebuilds the snapshot by replay,
+   * returns control to the seat, and reclaims it. `meta.move_index` stays at the
+   * max — the human's next POST /move lands at max+1. If there is no reversible
+   * tail (someone/something committed on top), returns 409 {vetoable:false}.
+   */
+  private async handleVeto(request: Request): Promise<Response> {
+    const auth = await requireAuth(request, this.env)
+    if (auth instanceof Response) return auth
+
+    const meta = this.repo.getMeta()
+    if (!meta) return json({ error: 'game_not_found' }, 404)
+
+    // Owner-first authz: you may only veto the seat you own.
+    const seat = this.repo.seatOwnedBy(auth.accountId)
+    if (!seat) return json({ error: 'not_your_seat' }, 403)
+    const seatIndex = seat.seat_index
+
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.onWake(sql, now) // credit any eviction gap + stamp last_processed_at
+
+    // ONE transactionSync: revert the tail, rebuild by replay, reclaim the seat.
+    const result = this.ctx.storage.transactionSync(() => performVeto(this.repo, sql, seatIndex, now))
+    if (!result.ok) return json({ vetoable: false }, 409)
+
+    this.ensureHeal(sql, now)
+    await rearmAlarm(this.ctx, sql)
+    // Seat-agnostic news: the board rolled back (no hand data). Clients re-sync.
+    this.broadcast({ type: 'veto', seat: seatIndex, moveIndex: result.moveIndex })
+
+    return json({
+      ok: true,
+      moveIndex: result.moveIndex, // unchanged max — the human's next /move is +1
+      reverted: result.revertedIndices,
+      snapshot: buildClientView(result.rebuilt, seatIndex),
+    })
   }
 
   private async handleSync(request: Request, url: URL): Promise<Response> {
