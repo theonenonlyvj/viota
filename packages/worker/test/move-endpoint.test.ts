@@ -185,8 +185,8 @@ describe('POST /games/:id/move', () => {
       else waiters.push(resolve)
     })
 
-    // WS first-frame auth (stub form until task 5 pins the token handshake).
-    ws.send(JSON.stringify({ type: 'auth', seatIndex: 0, accountId: 'acct-0' }))
+    // WS first-frame auth: a valid token whose account owns seat 0.
+    ws.send(JSON.stringify({ type: 'auth', token: await mintToken('acct-0') }))
     expect((await next()).type).toBe('auth_ok')
 
     const nudgePromise = next()

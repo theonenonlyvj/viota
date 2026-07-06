@@ -1,7 +1,7 @@
 import { DurableObject } from 'cloudflare:workers'
 import { initGame } from '@viota/engine'
 import { assertSecret } from './auth'
-import { requireAuth } from './do/authctx'
+import { requireAuth, authenticateToken } from './do/authctx'
 import { performVeto } from './do/veto'
 import { runMigrations, GameRepository, type SqlLike } from './do/storage'
 import { initGameForOnline, type SeatOwner } from './do/init'
@@ -323,7 +323,7 @@ export class GameDO extends DurableObject<Env> {
         | null) ?? { authed: false }
 
     const text = typeof message === 'string' ? message : new TextDecoder().decode(message)
-    let frame: { type?: string; seatIndex?: number; accountId?: string | null } | null
+    let frame: { type?: string; token?: unknown } | null
     try {
       frame = JSON.parse(text)
     } catch {
@@ -331,19 +331,33 @@ export class GameDO extends DurableObject<Env> {
     }
 
     if (!att.authed) {
-      // First-frame auth handshake. STUB for Phase 1 — Phase 4 verifies the JWT
-      // and confirms seat ownership. A missing/invalid frame closes 4001.
-      if (frame && frame.type === 'auth' && Number.isInteger(frame.seatIndex) && (frame.seatIndex as number) >= 0) {
-        ws.serializeAttachment({ authed: true, seatIndex: frame.seatIndex, accountId: frame.accountId ?? null })
-        ws.send(JSON.stringify({ type: 'auth_ok', seat: frame.seatIndex }))
-      } else {
+      // First-frame auth handshake. The first frame MUST be `{type:'auth', token}`:
+      // verify the JWT, then confirm the account owns a seat in THIS game
+      // (resolved live from the seats table — never a token claim). On a missing/
+      // invalid token OR a non-owner, close 4001. The identity is stashed via
+      // serializeAttachment so it survives hibernation.
+      if (!frame || frame.type !== 'auth' || typeof frame.token !== 'string') {
         ws.close(4001, 'auth required')
+        return
       }
+      const auth = await authenticateToken(frame.token, this.env)
+      if (!auth) {
+        ws.close(4001, 'invalid token')
+        return
+      }
+      const seat = this.repo.seatOwnedBy(auth.accountId)
+      if (!seat) {
+        ws.close(4001, 'not a seat owner')
+        return
+      }
+      ws.serializeAttachment({ authed: true, seatIndex: seat.seat_index, accountId: auth.accountId })
+      ws.send(JSON.stringify({ type: 'auth_ok', seat: seat.seat_index }))
       return
     }
 
-    // Authenticated app frame. Phase 1 scaffold: benign ack (real move/heartbeat
-    // handling arrives in later phases; correctness never rides the socket).
+    // Authenticated app frame. Benign ack — correctness never rides the socket
+    // (all mutation + recovery is idempotent HTTP); the socket is only a nudge
+    // channel. Nudges stay seat-agnostic (no hand data).
     ws.send(JSON.stringify({ type: 'ack', seat: att.seatIndex, echo: frame?.type ?? null }))
   }
 

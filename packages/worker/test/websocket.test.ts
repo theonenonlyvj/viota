@@ -1,5 +1,6 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect } from 'vitest'
+import { mintToken } from './helpers'
 
 async function createGame(playerCount = 2): Promise<string> {
   const seatOwners = Array.from({ length: playerCount }, (_, i) => ({
@@ -41,18 +42,18 @@ function reader(ws: WebSocket) {
     })
 }
 
-it('accepts a WS upgrade and handles frames via the hibernation methods', async () => {
+it('authes a socket with a valid owner token and replies auth_ok with its seat', async () => {
   const gameId = await createGame()
   const ws = await openSocket(gameId)
   const next = reader(ws)
 
-  // First-frame auth handshake (stub).
-  ws.send(JSON.stringify({ type: 'auth', seatIndex: 0, accountId: 'a0' }))
+  // First-frame auth handshake: a valid token whose account owns seat 0.
+  ws.send(JSON.stringify({ type: 'auth', token: await mintToken('a0') }))
   const authOk = await next()
   expect(authOk.type).toBe('auth_ok')
-  expect(authOk.seat).toBe(0)
+  expect(authOk.seat).toBe(0) // seat resolved LIVE from ownership
 
-  // Post-auth app frame is handled by webSocketMessage (Phase 1: ack).
+  // Post-auth app frame is handled by webSocketMessage (benign ack).
   ws.send(JSON.stringify({ type: 'hello' }))
   const ack = await next()
   expect(ack.type).toBe('ack')
@@ -61,7 +62,7 @@ it('accepts a WS upgrade and handles frames via the hibernation methods', async 
   ws.close(1000, 'done')
 })
 
-it('closes with 4001 when the first frame is not a valid auth frame', async () => {
+it('closes 4001 when the first frame is not a valid auth frame', async () => {
   const gameId = await createGame()
   const ws = await openSocket(gameId)
 
@@ -69,15 +70,34 @@ it('closes with 4001 when the first frame is not a valid auth frame', async () =
     ws.addEventListener('close', (e) => resolve(e as CloseEvent), { once: true }),
   )
   ws.send(JSON.stringify({ type: 'i-am-not-auth' }))
-  const ev = await closed
-  expect(ev.code).toBe(4001)
+  expect((await closed).code).toBe(4001)
+})
+
+it('closes 4001 on an invalid/garbage token', async () => {
+  const gameId = await createGame()
+  const ws = await openSocket(gameId)
+  const closed = new Promise<CloseEvent>((resolve) =>
+    ws.addEventListener('close', (e) => resolve(e as CloseEvent), { once: true }),
+  )
+  ws.send(JSON.stringify({ type: 'auth', token: 'not.a.jwt' }))
+  expect((await closed).code).toBe(4001)
+})
+
+it('closes 4001 on a valid token whose account owns no seat in THIS game', async () => {
+  const gameId = await createGame()
+  const ws = await openSocket(gameId)
+  const closed = new Promise<CloseEvent>((resolve) =>
+    ws.addEventListener('close', (e) => resolve(e as CloseEvent), { once: true }),
+  )
+  ws.send(JSON.stringify({ type: 'auth', token: await mintToken('a-foreigner') }))
+  expect((await closed).code).toBe(4001)
 })
 
 it('nudge fans out seat-agnostically via getWebSockets (news at index N, no hand data)', async () => {
   const gameId = await createGame()
   const ws = await openSocket(gameId)
   const next = reader(ws)
-  ws.send(JSON.stringify({ type: 'auth', seatIndex: 1, accountId: 'a1' }))
+  ws.send(JSON.stringify({ type: 'auth', token: await mintToken('a1') }))
   await next() // consume auth_ok
 
   const nudgeMsg = next()
