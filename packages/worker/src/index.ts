@@ -2,6 +2,7 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
+import { ABANDON_MS } from './do/constants'
 
 // Cloudflare resolves the Durable Object class from the entry module's exports.
 export { GameDO }
@@ -113,5 +114,25 @@ export default {
     }
 
     return json({ error: 'not_found' }, 404)
+  },
+
+  /**
+   * Cron sweep (1-min trigger). Finds stale active games via the lobby-registry
+   * index — `status='active' AND last_activity_at < now - ABANDON_MS` — and pokes
+   * each DO's `/tick`, which re-drives/abandons it and drains any unflushed
+   * archive rows. Lightweight: one indexed D1 query + a fire-and-forget poke per
+   * stale game (the DO does the real work).
+   */
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    if (assertSecret(env)) return // fail-closed if misconfigured
+    const cutoff = Date.now() - ABANDON_MS
+    const { results } = await env.DB.prepare(
+      `SELECT game_uuid FROM games WHERE status = 'active' AND last_activity_at < ?`,
+    )
+      .bind(cutoff)
+      .all<{ game_uuid: string }>()
+    for (const { game_uuid } of results) {
+      ctx.waitUntil(stubFor(env, game_uuid).fetch('https://do/tick', { method: 'POST' }))
+    }
   },
 } satisfies ExportedHandler<Env>

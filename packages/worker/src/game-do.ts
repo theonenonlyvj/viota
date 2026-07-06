@@ -115,6 +115,9 @@ export class GameDO extends DurableObject<Env> {
     if (request.method === 'GET' && path === '/sync') {
       return this.handleSync(request, url)
     }
+    if (request.method === 'POST' && path === '/tick') {
+      return this.handleTick()
+    }
 
     return json({ error: 'not_found' }, 404)
   }
@@ -703,6 +706,25 @@ export class GameDO extends DurableObject<Env> {
       reverted: result.revertedIndices,
       snapshot: buildClientView(result.rebuilt, seatIndex),
     })
+  }
+
+  /**
+   * POST /tick — the cron sweep's self-heal poke (task 5, unauthenticated: only
+   * reachable via the DO stub, never the public Worker router). On wake it
+   * credits any eviction gap, runs the heal path (safety re-drive while humans
+   * are present, or abandon after a long absence), re-arms the wheel, and — since
+   * a cron tick is not latency-sensitive — AWAITS the archive drain so any
+   * archive_outbox rows a prior D1 hiccup left behind are retried synchronously.
+   */
+  private async handleTick(): Promise<Response> {
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    this.onWake(sql, now)
+    const meta = this.repo.getMeta()
+    if (meta && meta.status === 'active') this.healTick(sql, now)
+    await rearmAlarm(this.ctx, sql)
+    await this.archiveTick(now) // drain unflushed outbox + finalize on end
+    return json({ ok: true })
   }
 
   private async handleSync(request: Request, url: URL): Promise<Response> {
