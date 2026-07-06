@@ -68,6 +68,13 @@ export default {
       return json({ gameId, code }, 201)
     }
 
+    // POST /games/:id/join -> forward to the DO (claim an open waiting-room seat).
+    const join = path.match(/^\/games\/([^/]+)\/join$/)
+    if (request.method === 'POST' && join) {
+      const gameId = decodeURIComponent(join[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/join', request))
+    }
+
     // POST /games/:id/move -> forward to the DO's authoritative move pipeline.
     const move = path.match(/^\/games\/([^/]+)\/move$/)
     if (request.method === 'POST' && move) {

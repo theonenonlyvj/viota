@@ -1,4 +1,5 @@
 import type { Card, GameState, RegularCard } from '@viota/engine'
+import type { GameRepository } from './storage'
 
 /**
  * Per-seat redacted client view — the ONLY shape a client ever receives.
@@ -25,6 +26,31 @@ export type ClientView = {
   playedCards: RegularCard[]
   consecutivePasses: number
   finished: boolean
+}
+
+/**
+ * The waiting-room roster — the public projection of a `'waiting'` game (no
+ * board, no deal). Names are public within a room; nothing hidden is exposed.
+ */
+export type WaitingRoomView = {
+  status: 'waiting'
+  playerCount: number
+  code: string | null
+  seats: { seatIndex: number; ownerType: string; displayName: string | null }[]
+}
+
+export function buildWaitingRoomView(repo: GameRepository): WaitingRoomView {
+  const meta = repo.getMeta()
+  return {
+    status: 'waiting',
+    playerCount: meta?.player_count ?? 0,
+    code: meta?.code ?? null,
+    seats: repo.getSeats().map((s) => ({
+      seatIndex: s.seat_index,
+      ownerType: s.owner_type,
+      displayName: s.display_name,
+    })),
+  }
 }
 
 export function buildClientView(state: GameState, seatIndex: number): ClientView {
