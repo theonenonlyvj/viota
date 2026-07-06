@@ -251,6 +251,49 @@ export class GameRepository {
     )
   }
 
+  /**
+   * Append one move row. `move_index` is the PK and `client_move_id` is UNIQUE,
+   * so a duplicate index (impossible in a sync span — a backstop) or a duplicate
+   * client id will THROW; the caller catches it and returns a benign conflict.
+   */
+  insertMove(m: MoveRow): void {
+    this.sql.exec(
+      `INSERT INTO moves
+         (move_index, turn_number, seat_index, type, payload, score_delta,
+          score_after, by_ai, ai_difficulty, controlling_account_id,
+          client_move_id, reverted, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      m.move_index,
+      m.turn_number,
+      m.seat_index,
+      m.type,
+      m.payload,
+      m.score_delta,
+      m.score_after,
+      m.by_ai ? 1 : 0,
+      m.ai_difficulty,
+      m.controlling_account_id,
+      m.client_move_id,
+      m.reverted ? 1 : 0,
+      m.created_at,
+    )
+  }
+
+  /** In-txn idempotency probe (SQLite permits multiple NULL client_move_id). */
+  moveExistsByClientId(clientMoveId: string): boolean {
+    return this.all(`SELECT 1 FROM moves WHERE client_move_id = ? LIMIT 1`, clientMoveId).length > 0
+  }
+
+  /**
+   * Count of committed turn-completing moves (play/pass, not reverted). A
+   * wild_recycle does NOT complete a turn. `turn_number` for the next move is
+   * this count + 1, so a recycle and the play/pass that follows it share a turn.
+   */
+  countTurnCompletingMoves(): number {
+    const r = this.all(`SELECT COUNT(*) AS c FROM moves WHERE type IN ('play','pass') AND reverted = 0`)[0]
+    return r ? Number(r.c) : 0
+  }
+
   getSeats(): SeatRow[] {
     return this.all(`SELECT * FROM seats ORDER BY seat_index ASC`).map((r) => ({
       seat_index: Number(r.seat_index),
