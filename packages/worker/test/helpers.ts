@@ -101,6 +101,7 @@ export function seedScriptedGame(sql: SqlLike): { repo: GameRepository; game: Sc
     player_count: game.seatOwners.length,
     engine_version: 'viota-engine@test',
     game_uuid: 'scripted-1',
+    code: null,
   })
   game.seatOwners.forEach((o, i) => {
     repo.putSeat({
@@ -149,6 +150,7 @@ export function seedLiveGame(
     player_count: opts.playerCount,
     engine_version: 'viota-engine@test',
     game_uuid: `live-${opts.playerCount}`,
+    code: null,
   })
   for (let i = 0; i < opts.playerCount; i++) {
     repo.putSeat({

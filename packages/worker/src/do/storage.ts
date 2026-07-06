@@ -138,8 +138,40 @@ const migrateV3: Migration = (sql) => {
   `)
 }
 
+/**
+ * v4: widen `meta.status` to allow `'waiting'` (a lobby room that has not dealt
+ * yet) and add a nullable `code` column (the human room code, so `GET /sync` can
+ * echo it to the waiting-room roster). SQLite cannot ALTER a CHECK in place, so
+ * the table is rebuilt: create the widened table, copy any in-flight row across
+ * (code defaults to NULL), drop the old, rename. Version-gated so it runs once;
+ * the `DROP TABLE IF EXISTS meta_v4` guard makes a re-run after a partial failure
+ * harmless.
+ */
+const migrateV4: Migration = (sql) => {
+  sql.exec(`DROP TABLE IF EXISTS meta_v4`)
+  sql.exec(`
+    CREATE TABLE meta_v4 (
+      id             INTEGER PRIMARY KEY CHECK (id = 1),
+      move_index     INTEGER NOT NULL DEFAULT 0,
+      status         TEXT    NOT NULL DEFAULT 'active'
+                       CHECK (status IN ('waiting','active','completed','stalemate','abandoned')),
+      current_seat   INTEGER NOT NULL DEFAULT 0,
+      player_count   INTEGER NOT NULL,
+      engine_version TEXT    NOT NULL,
+      game_uuid      TEXT    NOT NULL,
+      code           TEXT
+    )
+  `)
+  sql.exec(
+    `INSERT INTO meta_v4 (id, move_index, status, current_seat, player_count, engine_version, game_uuid)
+     SELECT id, move_index, status, current_seat, player_count, engine_version, game_uuid FROM meta`,
+  )
+  sql.exec(`DROP TABLE meta`)
+  sql.exec(`ALTER TABLE meta_v4 RENAME TO meta`)
+}
+
 /** Ordered migration list. Index i is schema version (i+1). */
-export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3]
+export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3, migrateV4]
 
 /**
  * Idempotent forward migrator. Safe to run on every DO boot: creates the
@@ -165,11 +197,13 @@ export function runMigrations(sql: SqlLike, migrations: Migration[] = MIGRATIONS
 
 export type MetaRow = {
   move_index: number
-  status: 'active' | 'completed' | 'stalemate' | 'abandoned'
+  status: 'waiting' | 'active' | 'completed' | 'stalemate' | 'abandoned'
   current_seat: number
   player_count: number
   engine_version: string
   game_uuid: string
+  /** The human room code (multiplayer waiting rooms); null for solo/legacy games. */
+  code: string | null
 }
 
 export type SeatRow = {
@@ -220,21 +254,23 @@ export class GameRepository {
       player_count: Number(r.player_count),
       engine_version: String(r.engine_version),
       game_uuid: String(r.game_uuid),
+      code: r.code == null ? null : String(r.code),
     }
   }
 
   putMeta(m: MetaRow): void {
     this.sql.exec(
-      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid)
-       VALUES (1, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO meta (id, move_index, status, current_seat, player_count, engine_version, game_uuid, code)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET
          move_index = excluded.move_index,
          status = excluded.status,
          current_seat = excluded.current_seat,
          player_count = excluded.player_count,
          engine_version = excluded.engine_version,
-         game_uuid = excluded.game_uuid`,
-      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid,
+         game_uuid = excluded.game_uuid,
+         code = excluded.code`,
+      m.move_index, m.status, m.current_seat, m.player_count, m.engine_version, m.game_uuid, m.code,
     )
   }
 
