@@ -8,7 +8,8 @@ import { toClientMove } from './do/client-move'
 import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
-import { clearTimer, rearmAlarm } from './do/timers'
+import { clearTimer, setTimer, rearmAlarm, dueTimers, minFireAt } from './do/timers'
+import { autoCover, seatIndexPresent, type CoverDeps } from './do/presence'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -35,6 +36,7 @@ function statusForError(error: string): number {
     case 'game_over':
     case 'not_your_turn':
     case 'conflict':
+    case 'reclaimed':
       return 409
     case 'game_not_found':
     case 'no_snapshot':
@@ -142,6 +144,116 @@ export class GameDO extends DurableObject<Env> {
   /** Deps for the drive loop (the ONLY code path that produces AI moves). */
   private driveDeps(): DriveDeps {
     return { ctx: this.ctx, nudge: (i: number) => this.nudge(i) }
+  }
+
+  /** Deps for auto-cover (broadcast the dismissible ai_cover toast). */
+  private coverDeps(): CoverDeps {
+    return { broadcast: (p: unknown) => this.broadcast(p) }
+  }
+
+  // ---- Alarm handler (the never-stall floor + timer-wheel dispatch) --------
+  //
+  // The single platform Alarm fires at min(fire_at). It is wrapped in try/catch
+  // and ALWAYS re-arms before returning (CF abandons an alarm after ~6 retries;
+  // we never leave it unset while work remains). On a RETRY (`alarmInfo.isRetry`
+  // — CF re-fires the SAME alarm after a kill/throw), we take the O(1) pass
+  // floor instead of recomputing, so a CPU limit degrades AI quality, never
+  // liveness (must-fix #2). A persisted attempt-counter is deliberately NOT
+  // used: a rolled-back counter would re-run the killed path forever.
+
+  async alarm(alarmInfo?: { isRetry?: boolean; retryCount?: number }): Promise<void> {
+    const sql = this.ctx.storage.sql as unknown as SqlLike
+    const now = Date.now()
+    try {
+      if (alarmInfo?.isRetry) {
+        this.applyFloor(sql, now)
+        await rearmAlarm(this.ctx, sql)
+        return
+      }
+
+      // Normal fire: the platform only fires at/after min(fire_at), so when it
+      // fires the earliest timer IS due — process everything up to
+      // max(now, min). In production min <= now so this is just `<= now`; the
+      // max() also makes the timer fire correct when the harness fires an alarm
+      // immediately (ignoring its scheduled time). Then re-arm to the new min.
+      const threshold = Math.max(now, minFireAt(sql) ?? now)
+      for (const t of dueTimers(sql, threshold)) {
+        switch (t.kind) {
+          case 'grace':
+          case 'turn': {
+            // A returning human (fresh heartbeat within the presence window) is
+            // spared; only an actually-absent seat is covered.
+            if (seatIndexPresent(this.repo, t.seat, now)) {
+              clearTimer(sql, 'grace', t.seat)
+              clearTimer(sql, 'turn', t.seat)
+            } else {
+              autoCover(this.coverDeps(), this.repo, sql, t.seat, now)
+            }
+            break
+          }
+          case 'soft':
+            // A connected-but-AFK idler on their OWN turn -> cover (even present).
+            autoCover(this.coverDeps(), this.repo, sql, t.seat, now)
+            break
+          case 'ai_step':
+            clearTimer(sql, 'ai_step', t.seat)
+            driveIfAI(this.driveDeps(), this.repo, sql, now)
+            break
+          case 'heal':
+            clearTimer(sql, 'heal', t.seat)
+            driveIfAI(this.driveDeps(), this.repo, sql, now)
+            break
+        }
+      }
+      await rearmAlarm(this.ctx, sql)
+    } catch {
+      // Best-effort re-arm so the wheel is never lost, even on an unexpected throw.
+      try {
+        await rearmAlarm(this.ctx, sql)
+      } catch {
+        /* nothing more we can safely do here */
+      }
+    }
+  }
+
+  /**
+   * The CPU-kill floor: an O(1) always-legal `applyPass([],[])` for the current
+   * AI-covered seat. This CANNOT be CPU-killed, so it guarantees the turn
+   * advances past a seat whose smart computation was killed mid-invocation. The
+   * deterministic `floor:seat:targetMoveIndex` id makes a re-fire benign.
+   */
+  private applyFloor(sql: SqlLike, now: number): void {
+    const meta = this.repo.getMeta()
+    if (!meta || meta.status !== 'active') return
+    const seat = meta.current_seat
+    const seatRow = this.repo.getSeats()[seat]
+    if (!seatRow || !seatRow.controlled_by_ai) return // only floor an AI-covered seat
+    const snapshot = this.repo.getSnapshot()
+    if (!snapshot) return
+
+    const targetMoveIndex = meta.move_index + 1
+    const result = this.ctx.storage.transactionSync(() =>
+      applyAndPersist(sql, this.repo, {
+        seatIndex: seat,
+        move: { type: 'pass', trades: [], tradeOrder: [] },
+        clientMoveId: `floor:${seat}:${targetMoveIndex}`,
+        accountId: null,
+        byAi: true,
+        aiDifficulty: 'floor',
+        expectedSeat: seat,
+        requireAiControlled: true,
+        now,
+      }),
+    )
+    if ('ok' in result && result.ok) {
+      this.nudge(result.moveIndex)
+      // Keep the wheel turning: if the new current seat is AI, schedule a drive.
+      const after = this.repo.getMeta()
+      if (after && after.status === 'active') {
+        const nextRow = this.repo.getSeats()[after.current_seat]
+        if (nextRow && nextRow.controlled_by_ai) setTimer(sql, 'ai_step', after.current_seat, now)
+      }
+    }
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
