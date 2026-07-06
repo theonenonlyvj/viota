@@ -75,6 +75,20 @@ export default {
       return stubFor(env, gameId).fetch(new Request('https://do/join', request))
     }
 
+    // POST /games/:id/start -> forward to the DO (deal a waiting room + go live).
+    const start = path.match(/^\/games\/([^/]+)\/start$/)
+    if (request.method === 'POST' && start) {
+      const gameId = decodeURIComponent(start[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/start', request))
+    }
+
+    // POST /games/:id/leave -> forward to the DO (intentional leave = instant cover).
+    const leave = path.match(/^\/games\/([^/]+)\/leave$/)
+    if (request.method === 'POST' && leave) {
+      const gameId = decodeURIComponent(leave[1]!)
+      return stubFor(env, gameId).fetch(new Request('https://do/leave', request))
+    }
+
     // POST /games/:id/move -> forward to the DO's authoritative move pipeline.
     const move = path.match(/^\/games\/([^/]+)\/move$/)
     if (request.method === 'POST' && move) {
