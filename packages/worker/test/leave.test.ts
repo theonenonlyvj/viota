@@ -1,6 +1,6 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect, beforeAll } from 'vitest'
-import { authHeaders } from './helpers'
+import { authHeaders, createActiveGame } from './helpers'
 import { applyD1Schema } from '../src/d1/schema'
 import { GameRepository } from '../src/do/storage'
 
@@ -9,16 +9,7 @@ function stubFor(name: string) { return env.GAME_DO.get(env.GAME_DO.idFromName(n
 beforeAll(async () => { await applyD1Schema(DB()) })
 
 async function createActive() {
-  const seatOwners = [
-    { ownerType: 'human', accountId: 'p0', displayName: 'P0' },
-    { ownerType: 'human', accountId: 'p1', displayName: 'P1' },
-  ]
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount: 2, seatOwners }),
-  })
-  return ((await res.json()) as any).gameId as string
+  return createActiveGame(['p0', 'p1'])
 }
 
 async function leave(gameId: string, accountId: string) {

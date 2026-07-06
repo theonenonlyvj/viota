@@ -81,12 +81,12 @@ async function route(request: Request, env: Env): Promise<Response> {
 
     // POST /games -> create a game (mint a gameId + room code, init the DO).
     //
-    // Two protocols:
-    //  - NEW (authed): { playerCount, mode:'solo'|'multiplayer', displayName }.
-    //    host = the token account. 'solo' deals immediately (seat 0 host + AI);
-    //    'multiplayer' opens a status='waiting' room to join by code.
-    //  - LEGACY (no mode): { playerCount, seatOwners } deals immediately with
-    //    explicit fixed seats (backward compat with Phases 1-5).
+    // Authed only, two modes ({ playerCount, mode, displayName }); host = the
+    // token account:
+    //  - 'solo'        deals immediately (seat 0 host + medium AI fills);
+    //  - 'multiplayer' opens a status='waiting' room to join by code, dealt at
+    //                  /start by the host.
+    // (The legacy unauthed { seatOwners } path was removed in Phase 8.)
     if (request.method === 'POST' && path === '/games') {
       const gameId = crypto.randomUUID()
       let body: any
@@ -144,17 +144,8 @@ async function route(request: Request, env: Env): Promise<Response> {
         return json({ gameId, code }, 201)
       }
 
-      // LEGACY: explicit seatOwners, no auth.
-      const initBody = JSON.stringify({ ...(body as object), gameUuid: gameId, code })
-      const res = await stubFor(env, gameId).fetch(
-        new Request('https://do/init', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: initBody,
-        }),
-      )
-      if (!res.ok) return res // surface the DO's validation error verbatim
-      return json({ gameId, code }, 201)
+      // No recognized mode -> reject (the legacy unauthed seatOwners path is gone).
+      return json({ error: 'invalid_mode' }, 400)
     }
 
     // POST /games/:id/join -> forward to the DO (claim an open waiting-room seat).

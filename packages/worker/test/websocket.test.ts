@@ -1,17 +1,9 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect } from 'vitest'
-import { mintToken } from './helpers'
+import { mintToken, createActiveGame } from './helpers'
 
 async function createGame(playerCount = 2): Promise<string> {
-  const seatOwners = Array.from({ length: playerCount }, (_, i) => ({
-    ownerType: 'human' as const, accountId: `a${i}`, displayName: `P${i}`,
-  }))
-  const res = await SELF.fetch('https://example.com/games', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ playerCount, seatOwners }),
-  })
-  return ((await res.json()) as { gameId: string }).gameId
+  return createActiveGame(Array.from({ length: playerCount }, (_, i) => `a${i}`), playerCount)
 }
 
 async function openSocket(gameId: string): Promise<WebSocket> {

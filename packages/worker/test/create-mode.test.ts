@@ -56,7 +56,7 @@ it('mode=solo requires auth', async () => {
   expect((await create({ playerCount: 2, mode: 'solo', displayName: 'X' })).status).toBe(401)
 })
 
-it('legacy seatOwners create (no mode) still works without auth', async () => {
+it('the legacy seatOwners create (no mode) is rejected (path removed) -> 400 invalid_mode', async () => {
   const res = await create({
     playerCount: 2,
     seatOwners: [
@@ -64,7 +64,8 @@ it('legacy seatOwners create (no mode) still works without auth', async () => {
       { ownerType: 'ai', controlledByAi: true, displayName: 'Bot' },
     ],
   })
-  expect(res.status).toBe(201)
+  expect(res.status).toBe(400)
+  expect(((await res.json()) as any).error).toBe('invalid_mode')
 })
 
 it('full flow: create-room -> resolve -> join updates the polled roster', async () => {

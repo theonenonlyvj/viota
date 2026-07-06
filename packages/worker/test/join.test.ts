@@ -1,6 +1,6 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect, beforeAll } from 'vitest'
-import { authHeaders } from './helpers'
+import { authHeaders, createSoloGame } from './helpers'
 import { applyD1Schema } from '../src/d1/schema'
 import { runMigrations, GameRepository } from '../src/do/storage'
 import { createWaitingRoom } from '../src/do/init'
@@ -83,18 +83,9 @@ it('POST /join 409s when the room is full', async () => {
 })
 
 it('POST /join 409s when the game is not waiting', async () => {
-  const seatOwners = [
-    { ownerType: 'human', accountId: 'a0', displayName: 'P0' },
-    { ownerType: 'ai', displayName: 'Bot', controlledByAi: true },
-  ]
-  const created = (await (
-    await SELF.fetch('https://example.com/games', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ playerCount: 2, seatOwners }),
-    })
-  ).json()) as any
-  const res = await join(created.gameId, 'stranger')
+  // A solo create is dealt immediately (active, not waiting) -> not joinable.
+  const gameId = await createSoloGame('a0')
+  const res = await join(gameId, 'stranger')
   expect(res.status).toBe(409)
 })
 
