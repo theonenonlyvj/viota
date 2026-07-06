@@ -969,6 +969,12 @@ export class GameDO extends DurableObject<Env> {
     if (!ownSeat) return json({ error: 'not_your_seat' }, 403)
     const seat = ownSeat.seat_index
 
+    // A 'waiting' room has no deal/board yet — return the roster so the client's
+    // WaitingRoom can poll for joiners + the shared code (no redacted board).
+    if (meta.status === 'waiting') {
+      return json(buildWaitingRoomView(this.repo))
+    }
+
     const sinceRaw = url.searchParams.get('since')
     const since = sinceRaw == null ? 0 : Number(sinceRaw)
     if (!Number.isInteger(since) || since < 0) {
