@@ -12,7 +12,7 @@ import { validateMovePayloadShape } from './do/moves'
 import { applyAndPersist, type ApplyParams } from './do/apply'
 import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
-import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, promoteHost, type CoverDeps } from './do/presence'
+import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, promoteHost, armDisconnectCoverIfAbsent, type CoverDeps } from './do/presence'
 import { PRESENCE_MS, HEAL_MS, PAUSE_ABANDON_MS, GLOBAL_SEAT, AI_TAKEOVER_ALLOWED_MS, DEFAULT_AI_TAKEOVER_MS } from './do/constants'
 import { flushMove, flushGameCreate, flushGameEnd, touchActivity, upsertGamePlayers, setGameStatus, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
@@ -362,6 +362,10 @@ export class GameDO extends DurableObject<Env> {
             break
         }
       }
+      // If the turn now rests on a silently-absent human (e.g. an AI chain or
+      // floor just advanced onto them), arm their cover deadline so the next
+      // alarm can take the seat over — the never-stall floor for a dropped seat.
+      armDisconnectCoverIfAbsent(this.repo, sql, now)
       await rearmAlarm(this.ctx, sql)
       // Archive any AI/floor moves the wheel just committed (+ finalize on end).
       this.ctx.waitUntil(this.archiveTick(now))
@@ -406,6 +410,10 @@ export class GameDO extends DurableObject<Env> {
 
     if (isAnyHumanPresent(this.repo, now)) {
       driveIfAI(this.driveDeps(), this.repo, sql, now) // safety re-drive
+      // Backstop: if the on-turn seat is a silently-dropped human, arm its cover
+      // deadline. This is the guaranteed catch for a player who was present then
+      // went dark mid-turn (no socket-close event ever fires for a locked phone).
+      armDisconnectCoverIfAbsent(this.repo, sql, now)
       setTimer(sql, 'heal', GLOBAL_SEAT, now + HEAL_MS)
       return
     }
@@ -506,12 +514,16 @@ export class GameDO extends DurableObject<Env> {
   }
 
   async webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
-    // Presence/disconnect + grace-timer arming lands in Phase 4. The socket is
-    // already closing; no explicit close call here.
+    // Deliberately a no-op. Presence is HEARTBEAT-based, not socket-based: a
+    // socket close is not proof a player is gone (a locked phone / flaky network
+    // reconnects without a clean close, and a close often never fires at all).
+    // A silently-dropped on-turn seat is covered instead by `armDisconnectCoverIfAbsent`
+    // (armed from the heal tick / after each move / the alarm) once its
+    // `last_seen_at` goes stale — the reliable trigger. See presence.ts.
   }
 
   async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {
-    // No-op for Phase 1; presence is authoritative over socket state (Phase 4).
+    // No-op: presence is heartbeat-authoritative over socket state (see webSocketClose).
   }
 
   private async handleInit(request: Request): Promise<Response> {
@@ -831,6 +843,9 @@ export class GameDO extends DurableObject<Env> {
     clearTimer(sql, 'soft', seatIndex)
     this.ensureHeal(sql, now) // keep the abandon/re-drive self-tick alive
     driveIfAI(this.driveDeps(), this.repo, sql, now)
+    // If the move handed the turn to an already-absent human, arm their cover now
+    // (honors the host's patience promptly instead of waiting for the heal tick).
+    armDisconnectCoverIfAbsent(this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)
     // Write-through to D1 AFTER the sync commit — never inside it, never blocking
     // the response. Drains this move + any AI move the drive loop just committed,
