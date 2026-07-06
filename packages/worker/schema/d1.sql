@@ -17,12 +17,17 @@
 -- so two users with the same display name never collide and a different
 -- credential can never attach to an existing account. The raw credential is
 -- NEVER stored, only its hash.
+-- country/region/timezone are COARSE, IP-derived geo captured from request.cf at
+-- account creation (no GPS, no permission prompt). Persisted only at INSERT.
 CREATE TABLE IF NOT EXISTS accounts (
   id              TEXT PRIMARY KEY,
   credential_hash TEXT UNIQUE NOT NULL,
   username        TEXT UNIQUE,
   display_name    TEXT NOT NULL,
-  created_at      INTEGER NOT NULL
+  created_at      INTEGER NOT NULL,
+  country         TEXT,
+  region          TEXT,
+  timezone        TEXT
 );
 
 -- Per-game archive row + the lobby registry. `code` is the human room code

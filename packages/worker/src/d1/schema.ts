@@ -20,7 +20,10 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
      credential_hash TEXT UNIQUE NOT NULL,
      username        TEXT UNIQUE,
      display_name    TEXT NOT NULL,
-     created_at      INTEGER NOT NULL
+     created_at      INTEGER NOT NULL,
+     country         TEXT,
+     region          TEXT,
+     timezone        TEXT
    )`,
   `CREATE TABLE IF NOT EXISTS games (
      game_uuid        TEXT PRIMARY KEY,

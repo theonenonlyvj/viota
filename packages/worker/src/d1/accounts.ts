@@ -56,7 +56,16 @@ export type QuickAccountResult = { accountId: string; isNew: boolean }
  */
 export async function quickAccount(
   db: D1Database,
-  params: { credentialHash: string; displayName: string; now: number },
+  params: {
+    credentialHash: string
+    displayName: string
+    now: number
+    /** Coarse IP-derived geo (request.cf); stored ONLY on the mint INSERT, never
+     *  on re-auth of an existing account. Null when unavailable. */
+    country?: string | null
+    region?: string | null
+    timezone?: string | null
+  },
 ): Promise<QuickAccountResult> {
   const existing = await db
     .prepare('SELECT id FROM accounts WHERE credential_hash = ?')
@@ -67,11 +76,11 @@ export async function quickAccount(
   const id = crypto.randomUUID()
   await db
     .prepare(
-      `INSERT INTO accounts (id, credential_hash, username, display_name, created_at)
-       VALUES (?, ?, NULL, ?, ?)
+      `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, country, region, timezone)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
        ON CONFLICT(credential_hash) DO NOTHING`,
     )
-    .bind(id, params.credentialHash, params.displayName, params.now)
+    .bind(id, params.credentialHash, params.displayName, params.now, params.country ?? null, params.region ?? null, params.timezone ?? null)
     .run()
 
   const row = await db
@@ -112,7 +121,19 @@ export async function handleAuthQuick(
   if (displayName.length === 0) return json({ error: 'invalid_display_name' }, 400)
 
   const credentialHash = await hashCredential(body.deviceCredential)
-  const { accountId } = await quickAccount(env.DB, { credentialHash, displayName, now: Date.now() })
+  // Coarse IP-derived geo from Cloudflare's request.cf — no GPS, no permission
+  // prompt. All fields may be undefined (Miniflare/tests, or a stripped edge);
+  // read defensively and store null when absent, never throw.
+  const cf = (request as { cf?: { country?: unknown; region?: unknown; timezone?: unknown } }).cf
+  const geo = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null)
+  const { accountId } = await quickAccount(env.DB, {
+    credentialHash,
+    displayName,
+    now: Date.now(),
+    country: geo(cf?.country),
+    region: geo(cf?.region),
+    timezone: geo(cf?.timezone),
+  })
   const token = await signToken(accountId, env.JWT_SECRET)
   return json({ token, accountId })
 }
