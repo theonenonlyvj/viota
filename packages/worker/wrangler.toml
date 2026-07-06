@@ -1,0 +1,14 @@
+name = "viota-worker"
+main = "src/index.ts"
+compatibility_date = "2025-04-17"
+
+# One Durable Object per game. MUST be new_sqlite_classes (the SQLite-backed
+# class is the one available on the Workers Free plan; new_classes requests the
+# paid KV-backed class).
+[[durable_objects.bindings]]
+name = "GAME_DO"
+class_name = "GameDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameDO"]
