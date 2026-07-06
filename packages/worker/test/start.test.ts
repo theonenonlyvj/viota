@@ -141,9 +141,13 @@ it('host promotion: when the host leaves the waiting room, host_seat moves to th
   ws.close(1000, 'done')
 })
 
-it('host promotion: no eligible present human -> host_seat is left unchanged', async () => {
+it('host promotion: a joined human with NO lobby heartbeat is STILL promoted (lobbies never heartbeat)', async () => {
   const gameId = crypto.randomUUID()
-  await seedRoom(gameId, 3, { humans: [0, 1] }) // seat 1 present? no heartbeat -> not present
+  // Seat 1 is a real joined human but never heartbeated — the WaitingRoom client
+  // only polls GET /sync, so NO lobby seat is ever "present". Promotion must not
+  // require presence here, or every host-leave would strand the room (the joiners
+  // could never obtain Start).
+  await seedRoom(gameId, 3, { humans: [0, 1] })
   await SELF.fetch(`https://example.com/games/${gameId}/leave`, {
     method: 'POST',
     headers: await authHeaders('host'),
@@ -151,7 +155,7 @@ it('host promotion: no eligible present human -> host_seat is left unchanged', a
   const hostSeat = await runInDurableObject(stubFor(gameId), (_i, state: any) =>
     new GameRepository(state.storage.sql).getMeta()!.host_seat,
   )
-  expect(hostSeat).toBe(0) // unchanged (seat 1 never heartbeated -> not a present successor)
+  expect(hostSeat).toBe(1) // promoted to the joined human despite no heartbeat
 })
 
 it('POST /start 409s with fewer than 2 humans', async () => {
