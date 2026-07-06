@@ -5,6 +5,7 @@ import { handleClaim } from './d1/claim'
 import { resolveActiveGameByCode } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { ABANDON_MS } from './do/constants'
+import { handlePreflight, withCors } from './cors'
 
 // Cloudflare resolves the Durable Object class from the entry module's exports.
 export { GameDO }
@@ -38,14 +39,15 @@ function generateRoomCode(): string {
   return [...bytes].map((b) => alphabet[b % alphabet.length]).join('')
 }
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    // Request-time fail-closed secret guard — before any routing.
-    const guard = assertSecret(env)
-    if (guard) return guard
-
-    const url = new URL(request.url)
-    const path = url.pathname
+/**
+ * The HTTP router. Returns the raw (pre-CORS) Response; the `fetch` wrapper
+ * applies CORS to it. The WebSocket-upgrade branch returns a 101 response, which
+ * the wrapper detects (`.webSocket`) and passes through WITHOUT CORS (the WS
+ * handshake is not a CORS-governed fetch, and a 101's headers are immutable).
+ */
+async function route(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url)
+  const path = url.pathname
 
     // POST /auth/quick -> mint-or-authenticate a quick account (D1 accounts).
     if (request.method === 'POST' && path === '/auth/quick') {
@@ -207,6 +209,26 @@ export default {
     }
 
     return json({ error: 'not_found' }, 404)
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    // CORS preflight first — answer OPTIONS for EVERY route (incl. authed ones)
+    // before the secret guard, so a browser can complete the real request (which
+    // then carries CORS on its own success/error).
+    const preflight = handlePreflight(request, env)
+    if (preflight) return preflight
+
+    // Request-time fail-closed secret guard — before any routing (with CORS so
+    // the browser can read the 503).
+    const guard = assertSecret(env)
+    if (guard) return withCors(guard, request, env)
+
+    const response = await route(request, env)
+    // The WebSocket-upgrade response (101) is exempt from CORS and its headers
+    // are immutable — pass it straight through.
+    if (response.webSocket) return response
+    return withCors(response, request, env)
   },
 
   /**

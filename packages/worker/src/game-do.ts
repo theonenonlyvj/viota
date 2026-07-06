@@ -22,6 +22,10 @@ export interface Env {
   /** D1 analytics archive (Phase 5). Written through via ctx.waitUntil; a D1
    *  hiccup can never stall the live game (the DO SQLite copy is authoritative). */
   DB: D1Database
+  /** The exact browser origin allowed by CORS (the Cloudflare Pages URL). Set in
+   *  prod via `[vars]` or `wrangler secret put CLIENT_ORIGIN`. Unset only in
+   *  local dev, where CORS falls back to a permissive `*`. See `src/cors.ts`. */
+  CLIENT_ORIGIN?: string
 }
 
 function json(data: unknown, status = 200): Response {
