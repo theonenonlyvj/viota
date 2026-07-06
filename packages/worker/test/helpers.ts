@@ -1,5 +1,5 @@
 import type { Card, GameState, RegularCard } from '@viota/engine'
-import { posKey } from '@viota/engine'
+import { posKey, initGame } from '@viota/engine'
 import type { MovePayload } from '../src/do/moves'
 import type { SeatOwner } from '../src/do/init'
 import { runMigrations, GameRepository, type SqlLike } from '../src/do/storage'
@@ -104,4 +104,51 @@ export function seedScriptedGame(sql: SqlLike): { repo: GameRepository; game: Sc
   })
 
   return { repo, game }
+}
+
+/**
+ * Seed a LIVE game from a real `initGame(playerCount)` deal into a DO's SQLite,
+ * with per-seat AI-control + presence flags — the fixture for the Phase-3
+ * drive/alarm/presence/eviction tests.
+ *
+ *  - `aiSeats`: seat indices whose `controlled_by_ai` starts true.
+ *  - `presentSeats`: seat indices given a fresh `last_seen_at = now` (heartbeat).
+ *  - all seats are human-owned (`acct-<i>`) so an AI-covered seat still has an
+ *    owner to attribute moves to.
+ */
+export function seedLiveGame(
+  sql: SqlLike,
+  opts: { playerCount: number; aiSeats?: number[]; presentSeats?: number[]; now: number },
+): { repo: GameRepository; initialState: GameState } {
+  runMigrations(sql)
+  const repo = new GameRepository(sql)
+  const ai = new Set(opts.aiSeats ?? [])
+  const present = new Set(opts.presentSeats ?? [])
+  const initialState = initGame(opts.playerCount)
+
+  repo.putInitialState(initialState)
+  repo.putSnapshot(initialState)
+  repo.putMeta({
+    move_index: 0,
+    status: 'active',
+    current_seat: initialState.turnIndex,
+    player_count: opts.playerCount,
+    engine_version: 'viota-engine@test',
+    game_uuid: `live-${opts.playerCount}`,
+  })
+  for (let i = 0; i < opts.playerCount; i++) {
+    repo.putSeat({
+      seat_index: i,
+      owner_account_id: `acct-${i}`,
+      ghost_id: null,
+      owner_type: 'human',
+      display_name: `P${i}`,
+      ai_difficulty: ai.has(i) ? 'medium' : null,
+      controlled_by_ai: ai.has(i),
+      disconnected_at: null,
+      last_seen_at: present.has(i) ? opts.now : null,
+      final_score: null,
+    })
+  }
+  return { repo, initialState }
 }
