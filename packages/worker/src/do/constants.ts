@@ -45,6 +45,10 @@ export const ABANDON_MS = 600_000
  *  FREEZES the game; it only abandons after this window. */
 export const PAUSE_ABANDON_MS = 7 * 24 * 60 * 60 * 1000
 
+/** A WAITING room made but never started for THIS long (~2h) → the cron marks it
+ *  abandoned (drops it out of resolve-by-code). */
+export const WAITING_ABANDON_MS = 2 * 60 * 60 * 1000
+
 /** Sentinel seat for seat-agnostic timers (e.g. `heal`). The `timers` PK is
  *  (kind, seat); a real seat is >= 0, so -1 never collides. NULL is avoided
  *  because SQLite treats NULLs as distinct in a UNIQUE/PK index, which would
