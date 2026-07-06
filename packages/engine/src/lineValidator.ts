@@ -109,16 +109,29 @@ export function wildLinesConsistent(grid: Grid, seedPositions: Position[]): bool
     for (const seg of getMaximalSegments(grid, fromKey(wk))) if (!addSegment(seg)) return false
   }
 
+  // Identity is POSITIONAL, not object-based: give each wild grid cell its own
+  // fresh sentinel keyed by position, so two cells can never collapse into one
+  // CSP variable even if a caller/serializer aliases the same wild object across
+  // cells. (solveWilds matches wilds by object reference; feeding it distinct
+  // per-position sentinels makes that matching robust.)
+  const sentinelByKey = new Map<string, Card>()
+  for (const k of wildKeys) sentinelByKey.set(k, { kind: 'wild' })
+  const resolveCell = (p: Position): Card => {
+    const k = posKey(p)
+    const c = grid.get(k)!
+    return c.kind === 'wild' ? sentinelByKey.get(k)! : c
+  }
+
   // Split into wild / no-wild lines and validate.
   const wildLines: Card[][] = []
   for (const seg of segByKey.values()) {
-    const cards = seg.map(p => grid.get(posKey(p))!)
+    const cards = seg.map(resolveCell)
     if (cards.some(c => c.kind === 'wild')) wildLines.push(cards)
     else if (!isValidLine(cards as RegularCard[])) return false
   }
 
   if (wildLines.length === 0) return true
 
-  const allWilds = [...wildKeys].map(k => grid.get(k)!)
+  const allWilds = [...wildKeys].map(k => sentinelByKey.get(k)!)
   return solveWilds(allWilds, wildLines) !== null
 }
