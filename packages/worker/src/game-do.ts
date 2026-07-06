@@ -13,6 +13,7 @@ import { driveIfAI, type DriveDeps } from './do/drive'
 import { clearTimer, setTimer, hasTimer, rearmAlarm, dueTimers, minFireAt, creditEvictionGap } from './do/timers'
 import { autoCover, seatIndexPresent, isAnyHumanPresent, maxLastSeen, type CoverDeps } from './do/presence'
 import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
+import { flushMove, flushGameCreate, flushGameEnd, touchActivity, winnerSeatOf, type GameArchiveRow } from './do/archive'
 
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
@@ -163,6 +164,87 @@ export class GameDO extends DurableObject<Env> {
     return { broadcast: (p: unknown) => this.broadcast(p) }
   }
 
+  // ---- D1 archive write-through (must-fix #8) -----------------------------
+  //
+  // The DO SQLite copy is authoritative live truth; D1 is the rebuildable
+  // archive. Every mutating handler ends with `ctx.waitUntil(archiveTick(now))`
+  // (NEVER inside a transactionSync span, NEVER blocking the move response). A
+  // D1 failure only leaves outbox rows unflushed for the cron/`/tick` to retry.
+
+  /** Drain the DO-local archive_outbox to D1: every enqueued move (human/AI/
+   *  floor) is upserted, then the row is marked flushed. Stops on the first D1
+   *  error, leaving the rest unflushed for retry. `db` is injectable for tests. */
+  async flushOutbox(now: number, db: D1Database = this.env.DB): Promise<void> {
+    const meta = this.repo.getMeta()
+    if (!meta) return
+    const gameUuid = meta.game_uuid
+    let flushedAny = false
+    for (const idx of this.repo.unflushedOutbox()) {
+      const m = this.repo.getMove(idx)
+      if (!m) {
+        this.repo.markOutboxFlushed(idx) // orphan index — nothing to archive
+        continue
+      }
+      try {
+        await flushMove(db, gameUuid, m)
+        this.repo.markOutboxFlushed(idx)
+        flushedAny = true
+      } catch {
+        return // D1 down: leave this + later rows unflushed (cron/tick retries)
+      }
+    }
+    if (flushedAny) {
+      try {
+        await touchActivity(db, gameUuid, now)
+      } catch {
+        /* best-effort registry touch; never fatal */
+      }
+    }
+  }
+
+  /** Flush the outbox, then finalize the archive game row iff the game ended. A
+   *  game-end tick therefore leaves ZERO unflushed outbox rows. Never rejects. */
+  async archiveTick(now: number, db: D1Database = this.env.DB): Promise<void> {
+    await this.flushOutbox(now, db)
+    const meta = this.repo.getMeta()
+    if (!meta || meta.status === 'active') return
+    const scores = this.repo.getSnapshot()?.scores ?? []
+    try {
+      await flushGameEnd(db, meta.game_uuid, {
+        status: meta.status,
+        outcome: meta.status,
+        winnerSeat: meta.status === 'completed' ? winnerSeatOf(scores) : null,
+        endedAt: now,
+        lastActivityAt: now,
+        finalScores: scores,
+      })
+    } catch {
+      /* leave for the cron retry */
+    }
+  }
+
+  /** Write the games + game_players index rows to D1 at creation (registry). */
+  private async archiveGameCreate(now: number, code: string | null): Promise<void> {
+    const meta = this.repo.getMeta()
+    if (!meta) return
+    const game: GameArchiveRow = {
+      gameUuid: meta.game_uuid,
+      mode: 'online',
+      status: meta.status,
+      playerCount: meta.player_count,
+      source: 'online_authoritative', // forced server-side; never client-settable
+      engineVersion: meta.engine_version,
+      createdAt: now,
+      lastActivityAt: now,
+      code,
+    }
+    try {
+      await flushGameCreate(this.env.DB, game, this.repo.getSeats())
+    } catch {
+      /* the cron re-touches; a missing archive row never stalls the live game */
+    }
+  }
+
   // ---- Alarm handler (the never-stall floor + timer-wheel dispatch) --------
   //
   // The single platform Alarm fires at min(fire_at). It is wrapped in try/catch
@@ -184,6 +266,7 @@ export class GameDO extends DurableObject<Env> {
       if (alarmInfo?.isRetry) {
         this.applyFloor(sql, now)
         await rearmAlarm(this.ctx, sql)
+        this.ctx.waitUntil(this.archiveTick(now)) // archive the floor move
         return
       }
 
@@ -225,6 +308,8 @@ export class GameDO extends DurableObject<Env> {
         }
       }
       await rearmAlarm(this.ctx, sql)
+      // Archive any AI/floor moves the wheel just committed (+ finalize on end).
+      this.ctx.waitUntil(this.archiveTick(now))
     } catch {
       // Best-effort re-arm so the wheel is never lost, even on an unexpected throw.
       try {
@@ -273,6 +358,7 @@ export class GameDO extends DurableObject<Env> {
     const seen = maxLastSeen(this.repo)
     if (seen != null && now - seen > ABANDON_MS) {
       this.repo.putMeta({ ...meta, status: 'abandoned' })
+      this.ctx.waitUntil(this.archiveTick(now)) // finalize the abandoned game in D1
       return // stop ticking — the game is abandoned
     }
     // Frozen but not yet abandoned -> keep checking.
@@ -379,6 +465,7 @@ export class GameDO extends DurableObject<Env> {
       seatOwners?: SeatOwner[]
       gameUuid?: string
       engineVersion?: string
+      code?: string
     }
     try {
       body = (await request.json()) as typeof body
@@ -399,6 +486,10 @@ export class GameDO extends DurableObject<Env> {
       engineVersion: body.engineVersion,
       gameUuid: body.gameUuid,
     })
+
+    // Lobby-registry + analytics index rows to D1 (write-through, non-blocking).
+    const code = typeof body.code === 'string' ? body.code : null
+    this.ctx.waitUntil(this.archiveGameCreate(Date.now(), code))
 
     return json({ gameUuid: meta.game_uuid, moveIndex: meta.move_index, playerCount }, 201)
   }
@@ -471,6 +562,10 @@ export class GameDO extends DurableObject<Env> {
     this.ensureHeal(sql, now) // keep the abandon/re-drive self-tick alive
     driveIfAI(this.driveDeps(), this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)
+    // Write-through to D1 AFTER the sync commit — never inside it, never blocking
+    // the response. Drains this move + any AI move the drive loop just committed,
+    // and finalizes the game row if this move ended the game.
+    this.ctx.waitUntil(this.archiveTick(now))
     return json(result, 200)
   }
 
@@ -505,6 +600,8 @@ export class GameDO extends DurableObject<Env> {
     this.ensureHeal(sql, now)
     driveIfAI(this.driveDeps(), this.repo, sql, now)
     await rearmAlarm(this.ctx, sql)
+    // A heartbeat can un-freeze the drive loop and commit an AI move — archive it.
+    this.ctx.waitUntil(this.archiveTick(now))
     return json({ ok: true, seat: seatIndex })
   }
 
@@ -589,8 +686,14 @@ export class GameDO extends DurableObject<Env> {
     const result = this.ctx.storage.transactionSync(() => performVeto(this.repo, sql, seatIndex, now))
     if (!result.ok) return json({ vetoable: false }, 409)
 
+    // Re-enqueue the reverted rows so their `reverted=1` flip re-propagates to D1
+    // (the archive upsert DOes UPDATE reverted — never DO NOTHING for it, or D1
+    // replay would re-apply the reverted AI moves).
+    for (const idx of result.revertedIndices) this.repo.enqueueOutbox(idx)
+
     this.ensureHeal(sql, now)
     await rearmAlarm(this.ctx, sql)
+    this.ctx.waitUntil(this.archiveTick(now))
     // Seat-agnostic news: the board rolled back (no hand data). Clients re-sync.
     this.broadcast({ type: 'veto', seat: seatIndex, moveIndex: result.moveIndex })
 

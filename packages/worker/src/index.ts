@@ -18,6 +18,13 @@ function stubFor(env: Env, gameId: string) {
   return env.GAME_DO.get(env.GAME_DO.idFromName(gameId))
 }
 
+/** A short, human room code (lobby registry key). Excludes ambiguous glyphs. */
+function generateRoomCode(): string {
+  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+  const bytes = crypto.getRandomValues(new Uint8Array(6))
+  return [...bytes].map((b) => alphabet[b % alphabet.length]).join('')
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // Request-time fail-closed secret guard — before any routing.
@@ -41,7 +48,8 @@ export default {
       } catch {
         return json({ error: 'bad_json' }, 400)
       }
-      const initBody = JSON.stringify({ ...(body as object), gameUuid: gameId })
+      const code = generateRoomCode()
+      const initBody = JSON.stringify({ ...(body as object), gameUuid: gameId, code })
       const res = await stubFor(env, gameId).fetch(
         new Request('https://do/init', {
           method: 'POST',
@@ -50,7 +58,7 @@ export default {
         }),
       )
       if (!res.ok) return res // surface the DO's validation error verbatim
-      return json({ gameId }, 201)
+      return json({ gameId, code }, 201)
     }
 
     // POST /games/:id/move -> forward to the DO's authoritative move pipeline.

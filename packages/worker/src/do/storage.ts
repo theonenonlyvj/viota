@@ -120,8 +120,26 @@ const migrateV2: Migration = (sql) => {
   `)
 }
 
+/**
+ * v3: a DO-local `archive_outbox` — the write-through queue to the D1 archive
+ * (must-fix #8; the Cloudflare Queue is deliberately NOT used). A row is
+ * enqueued (`flushed=0`) when a move commits; a `ctx.waitUntil` flush to D1
+ * marks it `flushed=1`; the cron/`/tick` retries any still-unflushed rows. On
+ * veto the reverted rows are re-enqueued (`flushed=0`) so the `reverted` flip
+ * re-propagates to D1. A D1 outage only ever leaves rows unflushed — it can
+ * never stall the live game (the DO SQLite copy is authoritative).
+ */
+const migrateV3: Migration = (sql) => {
+  sql.exec(`
+    CREATE TABLE IF NOT EXISTS archive_outbox (
+      move_index INTEGER PRIMARY KEY,
+      flushed    INTEGER NOT NULL DEFAULT 0
+    )
+  `)
+}
+
 /** Ordered migration list. Index i is schema version (i+1). */
-export const MIGRATIONS: Migration[] = [migrateV1, migrateV2]
+export const MIGRATIONS: Migration[] = [migrateV1, migrateV2, migrateV3]
 
 /**
  * Idempotent forward migrator. Safe to run on every DO boot: creates the
@@ -247,23 +265,57 @@ export class GameRepository {
     return r ? deserializeState(String(r.state_json)) : null
   }
 
+  private static mapMoveRow(r: Record<string, unknown>): MoveRow {
+    return {
+      move_index: Number(r.move_index),
+      turn_number: Number(r.turn_number),
+      seat_index: Number(r.seat_index),
+      type: r.type as MoveRow['type'],
+      payload: String(r.payload),
+      score_delta: Number(r.score_delta),
+      score_after: Number(r.score_after),
+      by_ai: Number(r.by_ai) === 1,
+      ai_difficulty: r.ai_difficulty == null ? null : String(r.ai_difficulty),
+      controlling_account_id: r.controlling_account_id == null ? null : String(r.controlling_account_id),
+      client_move_id: r.client_move_id == null ? null : String(r.client_move_id),
+      reverted: Number(r.reverted) === 1,
+      created_at: Number(r.created_at),
+    }
+  }
+
   getMovesSince(k: number): MoveRow[] {
     return this.all(`SELECT * FROM moves WHERE move_index > ? ORDER BY move_index ASC`, k).map(
-      (r) => ({
-        move_index: Number(r.move_index),
-        turn_number: Number(r.turn_number),
-        seat_index: Number(r.seat_index),
-        type: r.type as MoveRow['type'],
-        payload: String(r.payload),
-        score_delta: Number(r.score_delta),
-        score_after: Number(r.score_after),
-        by_ai: Number(r.by_ai) === 1,
-        ai_difficulty: r.ai_difficulty == null ? null : String(r.ai_difficulty),
-        controlling_account_id: r.controlling_account_id == null ? null : String(r.controlling_account_id),
-        client_move_id: r.client_move_id == null ? null : String(r.client_move_id),
-        reverted: Number(r.reverted) === 1,
-        created_at: Number(r.created_at),
-      }),
+      GameRepository.mapMoveRow,
+    )
+  }
+
+  /** A single move row by index (for the archive write-through), or null. */
+  getMove(moveIndex: number): MoveRow | null {
+    const r = this.all(`SELECT * FROM moves WHERE move_index = ?`, moveIndex)[0]
+    return r ? GameRepository.mapMoveRow(r) : null
+  }
+
+  // ---- archive_outbox (DO-local write-through queue to D1) -----------------
+
+  /** Enqueue (or re-arm) a move for D1 flush: sets flushed=0 even if present, so
+   *  a veto's reverted rows are re-flushed. Synchronous SQL — safe in a span. */
+  enqueueOutbox(moveIndex: number): void {
+    this.sql.exec(
+      `INSERT INTO archive_outbox (move_index, flushed) VALUES (?, 0)
+       ON CONFLICT(move_index) DO UPDATE SET flushed = 0`,
+      moveIndex,
+    )
+  }
+
+  /** Mark an outbox row flushed after its D1 write-through succeeded. */
+  markOutboxFlushed(moveIndex: number): void {
+    this.sql.exec(`UPDATE archive_outbox SET flushed = 1 WHERE move_index = ?`, moveIndex)
+  }
+
+  /** Move indices still awaiting a D1 flush (ascending) — the cron/tick retry set. */
+  unflushedOutbox(): number[] {
+    return this.all(`SELECT move_index FROM archive_outbox WHERE flushed = 0 ORDER BY move_index ASC`).map(
+      (r) => Number(r.move_index),
     )
   }
 
@@ -293,6 +345,10 @@ export class GameRepository {
       m.reverted ? 1 : 0,
       m.created_at,
     )
+    // Queue this move for the D1 archive write-through in the SAME sync span it
+    // committed in, so EVERY path that appends a move (human, AI drive, CPU-kill
+    // floor) is captured atomically — the ctx.waitUntil flush drains it later.
+    this.enqueueOutbox(m.move_index)
   }
 
   /** In-txn idempotency probe (SQLite permits multiple NULL client_move_id). */
