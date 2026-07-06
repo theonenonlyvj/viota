@@ -130,10 +130,19 @@ test('a not_host 403 on start surfaces a graceful message', async () => {
   expect(await screen.findByText(/no longer the host/)).toBeInTheDocument()
 })
 
-test('auto-navigates into the game once it has started', async () => {
+test('auto-navigates into the game once it has started (poll fallback)', async () => {
   fetchRoom.mockResolvedValue({ status: 'started' })
   render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
   await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game/online'))
+})
+
+test('a started WS frame navigates into the game (snappier than the poll)', async () => {
+  fetchRoom.mockResolvedValue(hostedRoom) // still "waiting" per the poll
+  render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
+  await screen.findByText('Bob') // channel is wired
+  expect(mockNavigate).not.toHaveBeenCalled()
+  act(() => nudgeOpts!.onStarted!(0))
+  expect(mockNavigate).toHaveBeenCalledWith('/game/online')
 })
 
 test('Start is disabled with fewer than 2 humans', async () => {
