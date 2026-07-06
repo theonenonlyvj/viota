@@ -56,12 +56,11 @@ export default function OnlineGame() {
   // The whole online net lifecycle, keyed on the game id (re-runs on Rematch).
   useEffect(() => {
     if (!session) return
-    const { gameId, mySeat: seat, players: names } = session
+    const { gameId, mySeat: seat } = session
     const client = createOnlineClient(SERVER_URL, gameId, seat)
     const store = useGameStore
     store.getState().startOnline(gameId, seat)
     store.getState().setOnlineClient(client)
-    store.setState({ playerNames: names })
 
     const localIndex = () => store.getState().moveIndex
     const applySync = (r: Parameters<ReturnType<typeof store.getState>['applySync']>[0]) =>

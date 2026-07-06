@@ -6,20 +6,6 @@ import type { OnlineClient } from '../net/online'
 
 type Phase = 'idle' | 'placing' | 'ai-thinking' | 'game-over'
 
-type ClientView = {
-  grid: [string, Card][]
-  myHand: Card[]
-  handSizes: number[]
-  drawPileCount: number
-  scores: number[]
-  turnIndex: number
-  playedCards: RegularCard[]
-}
-
-type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
-
-type Connection = { send(msg: object): void; close(): void }
-
 type GameStore = {
   grid: GameState['grid']
   hands: Card[][]
@@ -41,16 +27,7 @@ type GameStore = {
   _worker: Worker | null
   recycleTarget: Position | null
   recycleValidCards: Card[]
-  // Online mode state
   mode: 'local' | 'online'
-  connectionStatus: ConnectionStatus
-  playerNames: string[]
-  myIndex: number
-  turnTimer: number
-  disconnectVote: { disconnectedPlayer: number; votes: Map<number, string>; totalVoters: number } | null
-  handSizes: number[]
-  aiTakeoverInfo: { playerIndex: number; difficulty: string } | null
-  _connection: Connection | null
   // --- New HTTP-first online state (Phase 6) ---
   gameId: string | null
   mySeat: number
@@ -75,16 +52,6 @@ type GameStore = {
   startRecycle(position: Position): void
   cancelRecycle(): void
   confirmRecycle(replacement: RegularCard): void
-  // Online mode actions
-  initOnline(myIndex: number, playerNames: string[]): void
-  applyServerState(view: ClientView): void
-  setConnectionStatus(status: ConnectionStatus): void
-  setConnection(conn: Connection | null): void
-  handleVoteStart(disconnectedPlayer: number): void
-  handleVoteCancelled(): void
-  handleAiTakeover(playerIndex: number, difficulty: string): void
-  handleVoteUpdate(disconnectedPlayer: number, votesReceived: number, totalVoters: number): void
-  sendVote(disconnectedPlayer: number, choice: string): void
   // --- New HTTP-first online actions (Phase 6) ---
   startOnline(gameId: string, mySeat: number): void
   setOnlineClient(net: OnlineClient | null): void
@@ -139,14 +106,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   recycleTarget: null,
   recycleValidCards: [],
   mode: 'local',
-  connectionStatus: 'disconnected',
-  playerNames: [],
-  myIndex: 0,
-  turnTimer: 0,
-  disconnectVote: null,
-  handSizes: [],
-  aiTakeoverInfo: null,
-  _connection: null,
   gameId: null,
   mySeat: 0,
   moveIndex: 0,
@@ -212,14 +171,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   confirmPlay() {
-    const { mode, _connection, staged } = get()
-    if (mode === 'online' && _connection) {
-      if (staged.length === 0) return
-      _connection.send({ type: 'play', placements: staged })
-      set({ staged: [], selectedCard: null, validPositions: [], previewScore: null, phase: 'ai-thinking' })
-      return
-    }
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker, staged } = get()
     if (staged.length === 0) return
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPlay(gs, humanIndex, staged)
@@ -244,12 +196,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   pass(trades, tradeOrder) {
-    const { mode, _connection } = get()
-    if (mode === 'online' && _connection) {
-      _connection.send({ type: 'pass', trades, tradeOrder })
-      set({ staged: [], selectedCard: null, validPositions: [], previewScore: null, phase: 'ai-thinking' })
-      return
-    }
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPass(gs, humanIndex, trades, tradeOrder)
@@ -337,103 +283,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   confirmRecycle(replacement) {
-    const { mode, _connection, recycleTarget: rt } = get()
-    if (mode === 'online' && _connection && rt) {
-      _connection.send({ type: 'wildRecycle', wildPosition: rt, replacement })
-      set({ recycleTarget: null, recycleValidCards: [] })
-      return
-    }
     const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, recycleTarget } = get()
     if (!recycleTarget) return
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyWildRecycle(gs, humanIndex, recycleTarget, replacement)
     if ('error' in result) return
     set({ ...result.newState, recycleTarget: null, recycleValidCards: [], validPositions: [], previewScore: null })
-  },
-
-  // Online mode actions
-  initOnline(myIndex, playerNames) {
-    set({
-      mode: 'online',
-      myIndex,
-      humanIndex: myIndex,
-      playerNames,
-      playerCount: playerNames.length,
-      grid: new Map(),
-      hands: Array.from({ length: playerNames.length }, () => []),
-      drawPile: [],
-      scores: Array.from({ length: playerNames.length }, () => 0),
-      turnIndex: 0,
-      playedCards: [],
-      selectedCard: null,
-      staged: [],
-      phase: 'idle',
-      lastScoreResult: null,
-      validPositions: [],
-      previewScore: null,
-      recycleTarget: null,
-      recycleValidCards: [],
-      turnTimer: 0,
-      disconnectVote: null,
-      handSizes: Array.from({ length: playerNames.length }, () => 0),
-      aiTakeoverInfo: null,
-    })
-  },
-
-  applyServerState(view) {
-    const { myIndex } = get()
-    const grid = new Map(view.grid)
-    const hands: Card[][] = Array.from({ length: view.handSizes.length }, () => [])
-    hands[myIndex] = view.myHand
-    const isMyTurn = view.turnIndex === myIndex
-    set({
-      grid,
-      hands,
-      handSizes: view.handSizes,
-      drawPile: [],
-      scores: view.scores,
-      turnIndex: view.turnIndex,
-      playedCards: view.playedCards,
-      staged: [],
-      selectedCard: null,
-      validPositions: [],
-      previewScore: null,
-      recycleTarget: null,
-      recycleValidCards: [],
-      turnTimer: 0,
-      phase: isMyTurn ? 'idle' : 'ai-thinking',
-    })
-  },
-
-  setConnectionStatus(status) {
-    set({ connectionStatus: status })
-  },
-
-  setConnection(conn) {
-    set({ _connection: conn })
-  },
-
-  handleVoteStart(disconnectedPlayer) {
-    set({ disconnectVote: { disconnectedPlayer, votes: new Map(), totalVoters: 0 } })
-  },
-
-  handleVoteCancelled() {
-    set({ disconnectVote: null })
-  },
-
-  handleAiTakeover(playerIndex, difficulty) {
-    set({ disconnectVote: null, aiTakeoverInfo: { playerIndex, difficulty } })
-  },
-
-  handleVoteUpdate(disconnectedPlayer, votesReceived, totalVoters) {
-    const { disconnectVote } = get()
-    if (!disconnectVote || disconnectVote.disconnectedPlayer !== disconnectedPlayer) return
-    set({ disconnectVote: { ...disconnectVote, totalVoters } })
-  },
-
-  sendVote(disconnectedPlayer, choice) {
-    const { _connection } = get()
-    if (_connection) _connection.send({ type: 'vote', disconnectedPlayer, choice })
   },
 
   // === New HTTP-first online mode (Phase 6) ===============================
