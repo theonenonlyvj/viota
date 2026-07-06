@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { isValidLine, solveWilds } from '../src/lineValidator'
-import type { Card, RegularCard } from '../src/types'
+import { isValidLine, solveWilds, wildLinesConsistent } from '../src/lineValidator'
+import type { Card, Grid, RegularCard } from '../src/types'
 
 const card = (color: string, shape: string, number: number): RegularCard =>
   ({ kind: 'regular', color: color as any, shape: shape as any, number: number as any })
@@ -103,6 +103,32 @@ describe('solveWilds', () => {
       expect(isValidLine(lineA)).toBe(true)
       expect(isValidLine(lineB)).toBe(true)
     }
+  })
+
+  it('is robust to two board cells aliasing the SAME wild object (positional identity)', () => {
+    // Column [green-triangle-1, W, yellow-plus-2, W] is a valid 4-line with the
+    // two wilds as DISTINCT cards (e.g. red-square-3 and blue-circle-4).
+    // If the two cells alias one wild OBJECT, an identity-based solver would
+    // collapse them into a single CSP variable and wrongly reject. The engine's
+    // real path (wildLinesConsistent) must key identity by POSITION, not object,
+    // so it stays correct even if a caller/serializer aliases cells.
+    const aliased: Card = { kind: 'wild' }
+    const gridAliased: Grid = new Map<string, Card>([
+      ['0,0', card('green', 'triangle', 1)],
+      ['0,1', aliased],
+      ['0,2', card('yellow', 'plus', 2)],
+      ['0,3', aliased], // SAME object reference as (0,1)
+    ])
+    expect(wildLinesConsistent(gridAliased, [{ x: 0, y: 0 }])).toBe(true)
+
+    // Control: identical board with DISTINCT wild objects is (and stays) valid.
+    const gridDistinct: Grid = new Map<string, Card>([
+      ['0,0', card('green', 'triangle', 1)],
+      ['0,1', { kind: 'wild' }],
+      ['0,2', card('yellow', 'plus', 2)],
+      ['0,3', { kind: 'wild' }],
+    ])
+    expect(wildLinesConsistent(gridDistinct, [{ x: 0, y: 0 }])).toBe(true)
   })
 
   it('returns null when no valid assignment exists', () => {
