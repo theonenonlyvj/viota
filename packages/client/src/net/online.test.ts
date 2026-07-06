@@ -90,6 +90,31 @@ test('a permanent 4xx move error resolves (not left queued)', async () => {
   expect(await listQueued('g1')).toHaveLength(0)
 })
 
+test.each([500, 502, 503, 429, 408])(
+  'a transient %i response leaves the move queued (retried later, not marked done)',
+  async (status) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ error: 'transient' }, status)))
+    const client = createOnlineClient('http://sv', 'g1', 0)
+    const res = await client.postMove(move, `mv-${status}`)
+    expect(res).toEqual({ status: 'queued' })
+    // still in the outbox so the next reconcile replays it with the SAME id
+    expect((await listQueued('g1')).map((e) => e.clientMoveId)).toEqual([`mv-${status}`])
+  },
+)
+
+test('drainOutbox leaves a move queued on a transient 5xx (does not mark done)', async () => {
+  // Enqueue offline first so there is a queued move to drain.
+  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+  const client = createOnlineClient('http://sv', 'g1', 0)
+  await client.postMove(move, 'mv-drain')
+  expect((await listQueued('g1')).length).toBe(1)
+
+  // The server is briefly overloaded → 503: the move must NOT be marked done.
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okJson({ error: 'overloaded' }, 503)))
+  await client.drainOutbox()
+  expect((await listQueued('g1')).map((e) => e.clientMoveId)).toEqual(['mv-drain'])
+})
+
 test('sync GETs with the since cursor and Bearer token', async () => {
   const fetchMock = vi.fn().mockResolvedValue(okJson({ moveIndex: 3, snapshot: view, moves: [] }))
   vi.stubGlobal('fetch', fetchMock)

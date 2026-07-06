@@ -32,6 +32,13 @@ export type OnlineClient = {
   veto(): Promise<VetoResponse>
 }
 
+/** A transient HTTP status the move should be REPLAYED on (like a network drop):
+ *  any 5xx, plus 408 Request Timeout and 429 Too Many Requests. Everything else
+ *  in the 4xx range is permanent and resolves the move. */
+function isRetryableStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 429
+}
+
 export function createOnlineClient(serverUrl: string, gameId: string, seatIndex: number): OnlineClient {
   const base = `/games/${encodeURIComponent(gameId)}`
 
@@ -44,7 +51,8 @@ export function createOnlineClient(serverUrl: string, gameId: string, seatIndex:
   }
 
   /** POST /move and normalize the DO's response into a PostMoveResult. On a
-   *  network error THROW so the caller can leave the move queued. */
+   *  network error — OR a transient 5xx/408/429 — THROW so the caller leaves the
+   *  move queued for idempotent replay (the server dedupes by clientMoveId). */
   async function send(move: MovePayload, clientMoveId: string): Promise<PostMoveResult> {
     const res = await authedFetch(serverUrl, `${base}/move`, moveBody(move, clientMoveId))
     if (res.ok) {
@@ -57,8 +65,12 @@ export function createOnlineClient(serverUrl: string, gameId: string, seatIndex:
       if (body.duplicate) return { status: 'duplicate', view: body.view }
       return { status: 'ok', moveIndex: body.moveIndex as number, view: body.view }
     }
-    // A 4xx (illegal move / conflict / not-your-turn) is permanent — the move
-    // will never succeed on replay, so it is NOT left queued (the caller re-syncs).
+    // Transient failures (5xx cold-start/overload, 408 timeout, 429 rate-limit)
+    // are RETRYABLE — treat them exactly like a network drop so the move stays in
+    // the outbox and replays later with the SAME clientMoveId.
+    if (isRetryableStatus(res.status)) throw new Error(`retryable_${res.status}`)
+    // A permanent 4xx (illegal move / conflict / not-your-turn) will never succeed
+    // on replay, so it is NOT left queued (the caller re-syncs).
     const body = (await res.json().catch(() => ({}))) as { error?: string }
     return { status: 'error', http: res.status, error: body.error ?? `http_${res.status}` }
   }
