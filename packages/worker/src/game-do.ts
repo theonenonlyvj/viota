@@ -66,6 +66,12 @@ export class GameDO extends DurableObject<Env> {
     const guard = assertSecret(this.env)
     if (guard) return guard
 
+    // WebSocket upgrade (path-agnostic: the Worker forwards the original
+    // /games/:id/socket request unchanged).
+    if ((request.headers.get('Upgrade') ?? '').toLowerCase() === 'websocket') {
+      return this.handleWebSocketUpgrade()
+    }
+
     const url = new URL(request.url)
     const path = url.pathname
 
@@ -77,6 +83,76 @@ export class GameDO extends DurableObject<Env> {
     }
 
     return json({ error: 'not_found' }, 404)
+  }
+
+  // ---- WebSocket Hibernation API -----------------------------------------
+  //
+  // Sockets are accepted via ctx.acceptWebSocket (hibernatable) and handled by
+  // the webSocket* DO METHODS below — NEVER server.accept()/addEventListener,
+  // which pin the DO in memory and defeat hibernation. Per-socket identity is
+  // stashed via serializeAttachment (survives hibernation); fan-out enumerates
+  // ctx.getWebSockets() rather than any in-memory Map.
+
+  private handleWebSocketUpgrade(): Response {
+    const [client, server] = Object.values(new WebSocketPair())
+    this.ctx.acceptWebSocket(server)
+    // Unauthenticated until the first-frame auth handshake succeeds.
+    server.serializeAttachment({ authed: false })
+    return new Response(null, { status: 101, webSocket: client })
+  }
+
+  /** Seat-agnostic broadcast: "there's news at index N" — never any hand data. */
+  nudge(moveIndex: number): number {
+    const payload = JSON.stringify({ type: 'nudge', moveIndex })
+    const sockets = this.ctx.getWebSockets()
+    for (const ws of sockets) {
+      try {
+        ws.send(payload)
+      } catch {
+        // socket gone; presence handling lands in Phase 4
+      }
+    }
+    return sockets.length
+  }
+
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    const att =
+      (ws.deserializeAttachment() as
+        | { authed?: boolean; seatIndex?: number; accountId?: string | null }
+        | null) ?? { authed: false }
+
+    const text = typeof message === 'string' ? message : new TextDecoder().decode(message)
+    let frame: { type?: string; seatIndex?: number; accountId?: string | null } | null
+    try {
+      frame = JSON.parse(text)
+    } catch {
+      frame = null
+    }
+
+    if (!att.authed) {
+      // First-frame auth handshake. STUB for Phase 1 — Phase 4 verifies the JWT
+      // and confirms seat ownership. A missing/invalid frame closes 4001.
+      if (frame && frame.type === 'auth' && Number.isInteger(frame.seatIndex) && (frame.seatIndex as number) >= 0) {
+        ws.serializeAttachment({ authed: true, seatIndex: frame.seatIndex, accountId: frame.accountId ?? null })
+        ws.send(JSON.stringify({ type: 'auth_ok', seat: frame.seatIndex }))
+      } else {
+        ws.close(4001, 'auth required')
+      }
+      return
+    }
+
+    // Authenticated app frame. Phase 1 scaffold: benign ack (real move/heartbeat
+    // handling arrives in later phases; correctness never rides the socket).
+    ws.send(JSON.stringify({ type: 'ack', seat: att.seatIndex, echo: frame?.type ?? null }))
+  }
+
+  async webSocketClose(_ws: WebSocket, _code: number, _reason: string, _wasClean: boolean): Promise<void> {
+    // Presence/disconnect + grace-timer arming lands in Phase 4. The socket is
+    // already closing; no explicit close call here.
+  }
+
+  async webSocketError(_ws: WebSocket, _error: unknown): Promise<void> {
+    // No-op for Phase 1; presence is authoritative over socket state (Phase 4).
   }
 
   private async handleInit(request: Request): Promise<Response> {
