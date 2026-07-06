@@ -5,13 +5,64 @@ import { GameDO, type Env } from './game-do'
 export { GameDO }
 export type { Env }
 
+function json(data: unknown, status = 200): Response {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
+}
+
+/** Resolve the DO stub for a gameId (gameId is the DO name). */
+function stubFor(env: Env, gameId: string) {
+  return env.GAME_DO.get(env.GAME_DO.idFromName(gameId))
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    // Request-time fail-closed secret guard (Task 3) — before any routing.
+    // Request-time fail-closed secret guard — before any routing.
     const guard = assertSecret(env)
     if (guard) return guard
 
-    // Real routing (POST /games, GET /games/:id/sync, WS upgrade) lands in Task 5/6.
-    return new Response('viota worker', { status: 200 })
+    const url = new URL(request.url)
+    const path = url.pathname
+
+    // POST /games -> mint a gameId, init the DO, return { gameId }.
+    if (request.method === 'POST' && path === '/games') {
+      const gameId = crypto.randomUUID()
+      let body: unknown
+      try {
+        body = await request.json()
+      } catch {
+        return json({ error: 'bad_json' }, 400)
+      }
+      const initBody = JSON.stringify({ ...(body as object), gameUuid: gameId })
+      const res = await stubFor(env, gameId).fetch(
+        new Request('https://do/init', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: initBody,
+        }),
+      )
+      if (!res.ok) return res // surface the DO's validation error verbatim
+      return json({ gameId }, 201)
+    }
+
+    // GET /games/:id/sync?since=k&seat=s -> forward to the DO (redacted read).
+    const sync = path.match(/^\/games\/([^/]+)\/sync$/)
+    if (request.method === 'GET' && sync) {
+      const gameId = decodeURIComponent(sync[1]!)
+      return stubFor(env, gameId).fetch(
+        new Request(`https://do/sync${url.search}`, { method: 'GET' }),
+      )
+    }
+
+    // WS upgrade for a game -> forward to the DO (Task 6).
+    const socket = path.match(/^\/games\/([^/]+)\/socket$/)
+    if (socket) {
+      const gameId = decodeURIComponent(socket[1]!)
+      return stubFor(env, gameId).fetch(request)
+    }
+
+    return json({ error: 'not_found' }, 404)
   },
 } satisfies ExportedHandler<Env>
