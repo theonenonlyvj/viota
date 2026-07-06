@@ -17,6 +17,9 @@ import { PRESENCE_MS, HEAL_MS, ABANDON_MS, GLOBAL_SEAT } from './do/constants'
 export interface Env {
   GAME_DO: DurableObjectNamespace<GameDO>
   JWT_SECRET?: string
+  /** D1 analytics archive (Phase 5). Written through via ctx.waitUntil; a D1
+   *  hiccup can never stall the live game (the DO SQLite copy is authoritative). */
+  DB: D1Database
 }
 
 function json(data: unknown, status = 200): Response {
