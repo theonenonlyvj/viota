@@ -10,7 +10,7 @@ import { createOnlineClient } from '../net/online'
 import { createNudgeChannel } from '../net/nudge'
 import { runReconcile, attachForegroundReconcile } from '../net/reconcile'
 import { getToken } from '../net/identity'
-import { createOnlineGame } from '../net/lobby'
+import { createOnlineGame, leaveGame } from '../net/lobby'
 import { loadSession, saveSession, clearSession, type OnlineSession } from '../net/session'
 
 const SERVER_URL = serverUrl()
@@ -110,9 +110,9 @@ export default function OnlineGame() {
   }
 
   function handleLeave() {
-    // Intentional leave: drop the socket + heartbeats. The server AI-covers the
-    // seat once presence lapses. (Immediate cover on an explicit leave endpoint
-    // is a deferred Worker fast-follow.)
+    // Intentional leave: tell the server to AI-cover my seat IMMEDIATELY (skips
+    // the grace window a silent drop waits for), then drop the socket + go home.
+    if (session) leaveGame(SERVER_URL, session.gameId)
     clearSession()
     setSession(null)
     navigate('/')

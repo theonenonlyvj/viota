@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { serverUrl } from '../net/config'
-import { createOnlineGame, joinOnlineGame } from '../net/lobby'
+import { createOnlineGame, createOnlineRoom, joinOnlineGame } from '../net/lobby'
 import { claimGhostGames } from '../net/ghost'
 import { saveSession } from '../net/session'
 
@@ -15,12 +15,27 @@ export default function Lobby() {
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
-  async function handleCreate() {
+  async function handleSolo() {
     if (!name.trim()) { setError('Name is required'); return }
     setError(''); setBusy(true)
     try {
       const created = await createOnlineGame(SERVER_URL, { displayName: name.trim(), opponents })
       // Claim any device ghost games into the fresh account (fire-and-forget).
+      claimGhostGames(SERVER_URL).catch(() => {})
+      saveSession({ gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players })
+      navigate('/game/online')
+    } catch {
+      setError(`Cannot reach server at ${SERVER_URL}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function handleCreateRoom() {
+    if (!name.trim()) { setError('Name is required'); return }
+    setError(''); setBusy(true)
+    try {
+      const created = await createOnlineRoom(SERVER_URL, { displayName: name.trim(), playerCount: opponents + 1 })
       claimGhostGames(SERVER_URL).catch(() => {})
       saveSession({ gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players })
       navigate(`/lobby/${created.code}`)
@@ -69,15 +84,18 @@ export default function Lobby() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 300 }}>
         <div>
-          <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>AI Opponents</p>
+          <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>Opponents</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
             {[1, 2, 3].map(n => (
               <button key={n} style={optBtn(opponents === n)} onClick={() => setOpponents(n)}>{n}</button>
             ))}
           </div>
         </div>
-        <button style={{ ...btnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleCreate}>
-          Create Online Game
+        <button style={{ ...btnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleSolo}>
+          Play vs AI
+        </button>
+        <button style={{ ...btnStyle, background: '#8b5cf6', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleCreateRoom}>
+          Create Room
         </button>
 
         <div style={{ borderTop: '1px solid #2a2a4a', paddingTop: 16 }}>
