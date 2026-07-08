@@ -37,11 +37,18 @@ Because a full visual redesign is landing separately, this work optimizes for **
 4. Keep the pending/reconcile/cover/reclaim/veto affordances intact.
 5. **Rules can never contradict the source of truth** — see §3.
 
+**Standing guardrail — flag rules↔engine discrepancies.** While authoring the rules content (§3) and the puzzle set (§6), every rule statement is cross-checked against actual engine behavior (`playValidator.ts`, `scorer.ts`, `lineValidator.ts`, `wildRecycle.ts`, `gameLoop.ts`). Any divergence — a source rule the engine doesn't implement, an engine behavior not in the rulebook, or a source-doc error — is **surfaced to Vijay**, not silently reconciled. Known items already found:
+
+- **Stalemate (3 all-pass rounds)** — engine-enforced (`STALEMATE_PASS_ROUNDS = 3`) but a **house-rule addition**; the original rulebook has no pass-loop end. Labeled as a viota house rule in the content.
+- **Ties / optional sudden-death** — a **house-rule addition**; rulebook just says "High score wins!". Labeled as such.
+- **Wild-starter reshuffle** — rulebook is silent; engine already deals a non-wild starter, matching Vijay's ruling. Documented as a clarification.
+- **`ref/iota_rules.txt` Turn-4 example typo** — coordinate `(2,1)` appears twice (should be `(3,1)`); not propagated. Worked examples in the content are verified against the real `scorer`.
+
 **Coordination with the parallel redesign:**
 
 - Shared-file touch points (`main.tsx`, `Home.tsx`, `TopBar.tsx`, `Game.tsx`, `OnlineGame.tsx`) are kept minimal and additive.
 - Everything else is **new files**.
-- When the redesign branch lands, rebase `how-to-play` onto it so the two Home buttons and the gear slot into the new chrome. (Noted, not a blocker.)
+- **Entry-point placement is provisional.** The Home buttons and the ⚙ gear are wired functionally now, but their *exact placement/styling* is deliberately not finalized against today's chrome. When the redesign branch lands, rebase `how-to-play` onto it and slot the buttons/gear into the new chrome then. (Noted, not a blocker.)
 
 ---
 
@@ -84,7 +91,10 @@ This module is the guardrail for "nothing we have as rules can contradict the ac
 - **"Full How to Play"** — opens the §4 overlay (as an overlay, so the game stays mounted underneath).
 - **"Auto-highlight legal moves" toggle** — ON by default (= current behavior, `computeValidPositions`); OFF lets the player find placements themselves. Straight from `ref/improvements.txt`. Stored in a small UI-preferences slice (see §7); it gates whether `validPositions` highlighting renders. This is a *display* toggle only — it never changes legality (the engine still validates on confirm).
 - **"New game"** — **local only** (calls `startGame` again); hidden in online (a scored restart would need backend).
-- **"Quit to menu"** — navigates to `/`. In **online** this is **leave, not a scored resign** (the backend already handles the resulting disconnect → AI-takeover per host patience); a true concede would require a new protocol action, which is out of scope.
+- **"Resign"** — **local only** (this branch). A new client-side store action `resign()` ends the local game immediately: the AI opponent wins, and the standard game-over screen shows. Pure client, no backend, no risk. Hidden in online.
+- **"Quit to menu"** — navigates to `/`. Available in both modes. In **online** this is **leave, not a scored resign** (the backend already handles the resulting disconnect → AI-takeover per host patience).
+
+**Online resign is a separate, queued feature (NOT this branch).** A real scored online resign is a certified-backend change (new DO protocol action, idempotent + redaction-safe, interacting with the AI-takeover/reclaim/veto state machine, plus a lockstep client+worker deploy) and requires a multiplayer ruling the physical game lacks (3–4 players: does a resign end the game or drop the seat and continue?). It gets its own design→plan→certify→deploy track after this work. See §9.
 
 **Dropped for now:** a **sound/animation toggle** — there is no sound or animation system in the app yet, so there is nothing to toggle. Adding one is a separate feature. (If Vijay wants it, it becomes its own small track.)
 
@@ -233,8 +243,9 @@ Loads every `Puzzle` and asserts, via `solver`/`validatePlay`:
 - `src/main.tsx` — add `<Route path="/practice" element={<Practice/>} />`.
 - `src/pages/Home.tsx` — add "How to Play" (opens overlay) + "Practice" (navigates) buttons; hold `howToPlayOpen` state.
 - `src/components/TopBar.tsx` — add optional `onOpenSettings?: () => void` prop + a ⚙ button in the right cluster.
-- `src/pages/Game.tsx` — hold `settingsOpen`; render `<SettingsMenu>` (with `onNewGame`); pass `onOpenSettings` to `TopBar`; render `<HowToPlay>` when launched from settings; apply the auto-highlight preference.
-- `src/pages/OnlineGame.tsx` — same settings wiring, minus `onNewGame`.
+- `src/store/gameStore.ts` — add a small **local-only** `resign()` action (flip to `phase: 'game-over'` with the AI as winner). Does **not** touch any online-mode field or semantics.
+- `src/pages/Game.tsx` — hold `settingsOpen`; render `<SettingsMenu>` (with `onNewGame` + `onResign`); pass `onOpenSettings` to `TopBar`; render `<HowToPlay>` when launched from settings; apply the auto-highlight preference.
+- `src/pages/OnlineGame.tsx` — same settings wiring, minus `onNewGame`/`onResign` (leave-to-menu only).
 
 ---
 
@@ -252,7 +263,8 @@ Loads every `Puzzle` and asserts, via `solver`/`validatePlay`:
 - The full visual redesign (separate parallel track) — this work ships placeholder styling to be re-skinned.
 - A sound/animation system (and thus a sound toggle).
 - Procedural puzzle generation (curated set only for v1).
-- Any backend/protocol change, including a scored online concede.
+- **Scored online resign** — deliberately *not* in this branch; it's a certified-backend feature queued as its own design→plan→certify→deploy track (see §5). *Local* resign **is** included here.
+- Any other backend/protocol change.
 - Persisting practice progress across sessions (session-only ✓ is enough for v1).
 
 ---
@@ -260,7 +272,9 @@ Loads every `Puzzle` and asserts, via `solver`/`validatePlay`:
 ## 10. Decisions locked
 
 - **How to Play:** hybrid (illustrated + interactive demos), delivered as an ephemeral overlay.
-- **Settings gear:** small menu = rules quick-ref + full-how-to-play link + auto-highlight toggle + (local) New game + Quit-to-menu; **no** sound toggle; online quit = leave, not resign.
+- **Settings gear:** small menu = rules quick-ref + full-how-to-play link + auto-highlight toggle + Quit-to-menu (both modes) + (local only) New game + **Resign**; **no** sound toggle. Online quit = leave; **scored online resign = separate queued backend feature**, not this branch.
+- **Rules↔engine discrepancies** are actively flagged to Vijay, not silently reconciled (§2).
+- **Entry-point placement** (Home buttons, gear) is provisional, finalized on rebase onto the redesign.
 - **Practice source:** curated, hand-authored set.
 - **Practice grading:** supports **both** `top-score` and `concept` puzzles; the instruction states which.
 - **Board fork:** (A) dedicated `StaticBoard`, not a refactor of the shared `Board`.
