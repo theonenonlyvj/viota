@@ -4,7 +4,7 @@ import { serverUrl } from '../net/config'
 import { createOnlineGame, createOnlineRoom, joinOnlineGame } from '../net/lobby'
 import { claimGhostGames } from '../net/ghost'
 import { saveSession } from '../net/session'
-import ResumeGames from '../components/ResumeGames'
+import ResumeStrip from '../components/ResumeStrip'
 
 const SERVER_URL = serverUrl()
 
@@ -89,7 +89,7 @@ export default function Lobby() {
   })
 
   return (
-    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}>
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}>
       <h1 style={{ fontSize: 48, fontWeight: 'bold', color: '#e2e8f0', letterSpacing: 4 }}>Viota</h1>
       <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
       {error && <p style={{ color: '#ef4444', fontSize: 13, maxWidth: 320, textAlign: 'center' }}>{error}</p>}
@@ -135,7 +135,7 @@ export default function Lobby() {
           <button style={{ ...btnStyle, width: '100%', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleJoin}>Join Room</button>
         </div>
 
-        <ResumeGames />
+        <ResumeStrip />
       </div>
 
       <button onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid #3a3a5a', color: '#9ca3af', borderRadius: 7, padding: '8px 24px', fontSize: 12, cursor: 'pointer' }}>
