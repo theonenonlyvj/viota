@@ -1,47 +1,44 @@
-import Overlay from './Overlay'
+import { useRef } from 'react'
+import { useModalDismiss } from '../hooks/useModalDismiss'
+import Button from './Button'
 import { QUICK_REF } from '../rules/content'
 
-const primaryBtn: React.CSSProperties = {
-  background: '#3b82f6', border: 'none', color: '#fff',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, fontWeight: 'bold', cursor: 'pointer',
-}
-
-const secondaryBtn: React.CSSProperties = {
-  background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#9ca3af',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, cursor: 'pointer',
-}
-
-const dangerBtn: React.CSSProperties = {
-  background: '#1e1e3a', border: '1px solid #7c2d2d', color: '#f87171',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, cursor: 'pointer',
-}
-
 type Props = {
+  open: boolean
   onClose: () => void
   onOpenHowToPlay: () => void
   onQuit: () => void
   onNewGame?: () => void
 }
 
-export default function SettingsMenu({ onClose, onOpenHowToPlay, onQuit, onNewGame }: Props) {
+export default function SettingsMenu({ open, onClose, onOpenHowToPlay, onQuit, onNewGame }: Props) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  useModalDismiss(open, onClose, cardRef)
+  if (!open) return null
   return (
-    <Overlay title="Settings" onClose={onClose} maxWidth={480}>
-      <div style={{ marginBottom: 16 }}>
-        {QUICK_REF.map(section => (
-          <section key={section.id} style={{ marginBottom: 12 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 4, color: '#e2e8f0' }}>{section.title}</h3>
-            <div style={{ fontSize: 12, color: '#9ca3af', lineHeight: 1.4 }}>{section.body}</div>
-          </section>
-        ))}
+    <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="Settings">
+      <div
+        className="modal-card"
+        onClick={(e) => e.stopPropagation()}
+        ref={cardRef}
+        tabIndex={-1}
+        style={{ maxWidth: 460, maxHeight: '86dvh', overflowY: 'auto' }}
+      >
+        <h2 style={{ fontFamily: 'Luckiest Guy', fontSize: 22, marginBottom: 14 }}>Settings</h2>
+        <div style={{ marginBottom: 18 }}>
+          {QUICK_REF.map(section => (
+            <section key={section.id} style={{ marginBottom: 12 }}>
+              <h3 style={{ fontFamily: 'Luckiest Guy', fontSize: 14, marginBottom: 4 }}>{section.title}</h3>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.45 }}>{section.body}</div>
+            </section>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <Button variant="primary" onClick={onOpenHowToPlay}>Full how to play</Button>
+          {onNewGame && <Button variant="secondary" onClick={onNewGame}>New game</Button>}
+          <Button variant="secondary" onClick={onQuit}>Quit to menu</Button>
+        </div>
       </div>
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={onOpenHowToPlay} style={primaryBtn}>Full How to Play</button>
-        {onNewGame && (
-          <button onClick={onNewGame} style={secondaryBtn}>New game</button>
-        )}
-        <button onClick={onQuit} style={dangerBtn}>Quit to menu</button>
-      </div>
-    </Overlay>
+    </div>
   )
 }

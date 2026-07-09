@@ -6,7 +6,7 @@ import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
 import SettingsMenu from '../components/SettingsMenu'
-import HowToPlay from '../components/HowToPlay'
+import HowToPlayModal from '../components/HowToPlayModal'
 import { serverUrl } from '../net/config'
 import { createOnlineClient } from '../net/online'
 import { createNudgeChannel } from '../net/nudge'
@@ -217,14 +217,13 @@ export default function OnlineGame() {
         />
       )}
 
-      {settingsOpen && (
-        <SettingsMenu
-          onClose={() => setSettingsOpen(false)}
-          onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
-          onQuit={() => navigate('/')}
-        />
-      )}
-      {howToOpen && <HowToPlay onClose={() => setHowToOpen(false)} />}
+      <SettingsMenu
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
+        onQuit={() => navigate('/')}
+      />
+      <HowToPlayModal open={howToOpen} onClose={() => setHowToOpen(false)} />
 
       {finished && (
         <div style={{

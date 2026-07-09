@@ -8,25 +8,18 @@ import type { GradeResult, UserMove } from '../practice/types'
 import { computeValidPositions, computePreviewScore } from '../gameLogic'
 import StaticBoard from '../components/StaticBoard'
 import Hand from '../components/Hand'
+import Button from '../components/Button'
 
 const panel: React.CSSProperties = {
-  background: '#1e1e3a', border: '1px solid #2a2a4a', borderRadius: 8,
+  background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.12)', clipPath: 'var(--chamfer)',
 }
 
-const primaryBtn: React.CSSProperties = {
-  background: '#3b82f6', border: 'none', color: '#fff',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, fontWeight: 'bold', cursor: 'pointer',
+const ghostBtn: React.CSSProperties = {
+  background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.16)', color: 'var(--text-body)',
+  clipPath: 'var(--chamfer)', padding: '9px 16px', fontFamily: 'Fredoka', fontWeight: 500, fontSize: 13, cursor: 'pointer',
 }
 
-const secondaryBtn: React.CSSProperties = {
-  background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#9ca3af',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, cursor: 'pointer',
-}
-
-const disabledBtn: React.CSSProperties = {
-  background: '#2a2a4a', border: 'none', color: '#6b7280',
-  borderRadius: 7, padding: '9px 20px', fontSize: 13, fontWeight: 'bold', cursor: 'default',
-}
+const heading: React.CSSProperties = { fontFamily: 'Luckiest Guy', letterSpacing: '.01em' }
 
 export default function Practice() {
   const navigate = useNavigate()
@@ -63,10 +56,10 @@ export default function Practice() {
   // --- List view ---------------------------------------------------------
   if (!puzzle) {
     return (
-      <div style={{ minHeight: '100dvh', padding: 24, color: '#e2e8f0', maxWidth: 640, margin: '0 auto' }}>
+      <div style={{ minHeight: '100dvh', padding: 24, color: 'var(--text-body)', maxWidth: 640, margin: '0 auto', position: 'relative', zIndex: 1 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-          <h1 style={{ fontSize: 28, fontWeight: 'bold' }}>Practice</h1>
-          <button onClick={() => navigate('/')} style={secondaryBtn}>Back to menu</button>
+          <h1 style={{ ...heading, fontSize: 34, color: '#fff' }}>Practice</h1>
+          <button type="button" onClick={() => navigate('/')} style={ghostBtn}>Back to menu</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -80,19 +73,13 @@ export default function Practice() {
               }}
             >
               <div>
-                <div style={{ fontWeight: 'bold', fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ fontWeight: 600, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
                   {p.title}
-                  {solvedIds.has(p.id) && <span style={{ color: '#4ade80' }} aria-label="solved">✓</span>}
+                  {solvedIds.has(p.id) && <span style={{ color: 'var(--brand-cyan)' }} aria-label="solved">✓</span>}
                 </div>
-                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>{p.concept}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{p.concept}</div>
               </div>
-              <button
-                onClick={() => openPuzzle(p.id)}
-                aria-label={`Open ${p.title}`}
-                style={primaryBtn}
-              >
-                Open
-              </button>
+              <Button variant="primary" onClick={() => openPuzzle(p.id)} aria-label={`Open ${p.title}`}>Open</Button>
             </div>
           ))}
         </div>
@@ -152,16 +139,16 @@ export default function Practice() {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', padding: 24, color: '#e2e8f0', maxWidth: 720, margin: '0 auto' }}>
+    <div style={{ minHeight: '100dvh', padding: 24, color: 'var(--text-body)', maxWidth: 720, margin: '0 auto', position: 'relative', zIndex: 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
         <div>
-          <h1 style={{ fontSize: 22, fontWeight: 'bold' }}>{puzzle.title}</h1>
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>{puzzle.concept}</div>
+          <h1 style={{ ...heading, fontSize: 24, color: '#fff' }}>{puzzle.title}</h1>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{puzzle.concept}</div>
         </div>
-        <button onClick={backToList} style={secondaryBtn}>Back to menu</button>
+        <button type="button" onClick={backToList} style={ghostBtn}>Back to menu</button>
       </div>
 
-      <p style={{ ...panel, padding: '12px 16px', marginBottom: 16, color: '#e2e8f0', fontSize: 14 }}>
+      <p style={{ ...panel, padding: '12px 16px', marginBottom: 16, color: 'var(--text-body)', fontSize: 14 }}>
         {puzzle.instruction}
       </p>
 
@@ -187,48 +174,38 @@ export default function Practice() {
             onSelectCard={onSelectCard}
           />
         </div>
-        <div style={{ fontSize: 13, color: '#9ca3af', whiteSpace: 'nowrap' }}>
-          {preview ? <>Preview: <span style={{ color: '#4ade80', fontWeight: 'bold' }}>{preview.total}</span></> : 'Preview: —'}
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+          {preview ? <>Preview: <span style={{ color: 'var(--brand-cyan)', fontWeight: 700 }}>{preview.total}</span></> : 'Preview: —'}
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
-        <button
-          onClick={handleCheck}
-          disabled={staged.length === 0}
-          style={staged.length === 0 ? disabledBtn : primaryBtn}
-        >
-          Check
-        </button>
-        {isForcedPass && (
-          <button onClick={handlePass} style={primaryBtn}>Pass</button>
-        )}
-        <button onClick={handleReset} style={secondaryBtn}>Reset</button>
-        {isTopScore && (
-          <button onClick={() => setRevealed(true)} style={secondaryBtn}>Reveal best</button>
-        )}
-        <button onClick={handleNext} style={secondaryBtn}>Next</button>
+      <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Button variant="primary" onClick={handleCheck} disabled={staged.length === 0}>Check</Button>
+        {isForcedPass && <Button variant="primary" onClick={handlePass}>Pass</Button>}
+        <button type="button" onClick={handleReset} style={ghostBtn}>Reset</button>
+        {isTopScore && <button type="button" onClick={() => setRevealed(true)} style={ghostBtn}>Reveal best</button>}
+        <button type="button" onClick={handleNext} style={ghostBtn}>Next</button>
       </div>
 
       {result && (
         <div
           style={{
             ...panel, marginTop: 16, padding: '14px 18px',
-            border: result.solved ? '1px solid #16a34a' : '1px solid #3a3a5a',
+            border: result.solved ? '1px solid var(--brand-cyan)' : '1px solid rgba(255,255,255,.16)',
           }}
         >
           {result.solved ? (
             <>
-              <p style={{ color: '#4ade80', fontWeight: 'bold', marginBottom: 6 }}>Solved!</p>
-              <p style={{ fontSize: 13, color: '#e2e8f0' }}>{puzzle.explanation}</p>
+              <p style={{ color: 'var(--brand-cyan)', fontWeight: 700, marginBottom: 6 }}>Solved!</p>
+              <p style={{ fontSize: 13, color: 'var(--text-body)' }}>{puzzle.explanation}</p>
             </>
           ) : (
             <>
-              <p style={{ color: '#f87171', fontWeight: 'bold', marginBottom: 6 }}>Not quite — try again.</p>
+              <p style={{ color: '#ff8fa3', fontWeight: 700, marginBottom: 6 }}>Not quite — try again.</p>
               {isTopScore && (
-                <p style={{ fontSize: 13, color: '#9ca3af' }}>
-                  Your score: <span style={{ color: '#e2e8f0' }}>{result.userScore ?? '—'}</span>
-                  {' '}/ Best possible: <span style={{ color: '#e2e8f0' }}>{result.bestScore}</span>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  Your score: <span style={{ color: 'var(--text-body)' }}>{result.userScore ?? '—'}</span>
+                  {' '}/ Best possible: <span style={{ color: 'var(--text-body)' }}>{result.bestScore}</span>
                 </p>
               )}
             </>
@@ -238,10 +215,10 @@ export default function Practice() {
 
       {revealed && isTopScore && best.length > 0 && (
         <div style={{ ...panel, marginTop: 16, padding: '14px 18px' }}>
-          <p style={{ fontWeight: 'bold', marginBottom: 6, color: '#e2e8f0' }}>
+          <p style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text-body)' }}>
             Best play — scores {best[0]!.total}
           </p>
-          <p style={{ fontSize: 13, color: '#9ca3af' }}>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
             {best[0]!.placements
               .map(p => `${cardIdentity(p.card)} @ (${p.position.x}, ${p.position.y})`)
               .join(', ')}
