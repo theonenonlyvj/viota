@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
+import HowToPlay from '../components/HowToPlay'
 
 export default function Home() {
   const [opponents, setOpponents] = useState(1)
   const [difficulty, setDifficulty] = useState<'easy' | 'expert'>('easy')
+  const [howToOpen, setHowToOpen] = useState(false)
   const navigate = useNavigate()
   const startGame = useGameStore(s => s.startGame)
 
@@ -71,6 +73,22 @@ export default function Home() {
       >
         Play Online
       </button>
+
+      <div style={{ display: 'flex', gap: 12 }}>
+        <button
+          onClick={() => setHowToOpen(true)}
+          style={{ background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#e2e8f0', borderRadius: 8, padding: '10px 24px', fontSize: 15, cursor: 'pointer' }}
+        >
+          How to Play
+        </button>
+        <button
+          onClick={() => navigate('/practice')}
+          style={{ background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#e2e8f0', borderRadius: 8, padding: '10px 24px', fontSize: 15, cursor: 'pointer' }}
+        >
+          Practice
+        </button>
+      </div>
+      {howToOpen && <HowToPlay onClose={() => setHowToOpen(false)} />}
     </div>
   )
 }
