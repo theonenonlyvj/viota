@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { posKey } from '@viota/engine'
 import type { Card, Grid, RegularCard } from '@viota/engine'
-import { enumerateLegalPlays, bestPlays, cardIdentity, playKey } from './solver'
+import { enumerateLegalPlays, bestPlays, cardIdentity, playKey, CONCEPT_CHECKS } from './solver'
 
 const R = (color: any, shape: any, number: any): RegularCard => ({ kind: 'regular', color, shape, number })
 const WILD: Card = { kind: 'wild' }
@@ -60,5 +60,28 @@ describe('enumerateLegalPlays', () => {
     const plays = enumerateLegalPlays(grid, [R('blue', 'triangle', 1)])
     // It may still find perpendicular 2-lines; assert instead that bestPlays is non-negative-safe:
     expect(Array.isArray(plays)).toBe(true)
+  })
+})
+
+describe('CONCEPT_CHECKS', () => {
+  it('line-all-same: true when the touched line holds a property constant', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const placements = [{ card: R('red', 'circle', 2), position: { x: 1, y: 0 } }]
+    // row: red-circle-1, red-circle-2 => same color, same shape, different number => "all-same" on color/shape
+    expect(CONCEPT_CHECKS['line-all-same'](grid, placements)).toBe(true)
+  })
+  it('mixed-properties: true when the line is same on one property and different on another', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const placements = [{ card: R('red', 'triangle', 2), position: { x: 1, y: 0 } }]
+    // same color, different shape, different number => mixed
+    expect(CONCEPT_CHECKS['mixed-properties'](grid, placements)).toBe(true)
+  })
+  it('spans-both-ends: true when placements sit on both ends of an existing segment', () => {
+    const grid = gridOf([[1, 0, R('red', 'circle', 2)], [2, 0, R('red', 'circle', 3)]])
+    const placements = [
+      { card: R('red', 'circle', 1), position: { x: 0, y: 0 } },
+      { card: R('red', 'circle', 4), position: { x: 3, y: 0 } },
+    ]
+    expect(CONCEPT_CHECKS['spans-both-ends'](grid, placements)).toBe(true)
   })
 })
