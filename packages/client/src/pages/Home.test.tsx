@@ -55,3 +55,21 @@ test('selecting Expert sets difficulty to expert on start', async () => {
   await userEvent.click(screen.getByText('Start Game'))
   expect(useGameStore.getState().difficulty).toBe('expert')
 })
+
+test('shows How to Play and Practice entry points', () => {
+  render(<MemoryRouter><Home /></MemoryRouter>)
+  expect(screen.getByRole('button', { name: /how to play/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /practice/i })).toBeInTheDocument()
+})
+
+test('How to Play button opens the overlay', async () => {
+  render(<MemoryRouter><Home /></MemoryRouter>)
+  await userEvent.click(screen.getByRole('button', { name: /how to play/i }))
+  expect(screen.getByRole('dialog')).toBeInTheDocument()
+})
+
+test('Practice button navigates to /practice', async () => {
+  render(<MemoryRouter><Home /></MemoryRouter>)
+  await userEvent.click(screen.getByRole('button', { name: /^practice$/i }))
+  expect(mockNavigate).toHaveBeenCalledWith('/practice')
+})
