@@ -1,6 +1,6 @@
 import { validatePlay, score, posKey, fromKey, getMaximalSegments } from '@viota/engine'
 import type { Card, Grid, Placement, Position, RegularCard } from '@viota/engine'
-import type { ScoredPlay, ConceptCheckId } from './types'
+import type { ScoredPlay, ConceptCheckId, Puzzle, UserMove, GradeResult } from './types'
 
 export function cardIdentity(card: Card): string {
   return card.kind === 'wild' ? 'wild' : `${card.color}-${card.shape}-${card.number}`
@@ -157,4 +157,35 @@ export const CONCEPT_CHECKS: Record<ConceptCheckId, (grid: Grid, placements: Pla
     const lines = getMaximalSegments(t, wild.position).filter(s => s.length >= 2)
     return lines.length >= 2
   },
+}
+
+export function gradeUserMove(puzzle: Puzzle, move: UserMove): GradeResult {
+  const grid = new Map(puzzle.position.grid)
+  const best = bestPlays(grid, puzzle.position.hand)
+  const bestScore = best.length ? best[0].total : 0
+
+  // forced-pass puzzles: solved iff the user passes
+  if (puzzle.answerKind === 'forced-pass') {
+    return { solved: move.action === 'pass', userScore: null, bestScore, best: [] }
+  }
+
+  if (move.action === 'pass') {
+    return { solved: false, userScore: null, bestScore, best: puzzle.mode === 'top-score' ? best : [] }
+  }
+
+  const valid = validatePlay(grid, move.placements).valid
+  let userScore: number | null = null
+  if (valid) {
+    const t = new Map(grid)
+    for (const { card, position } of move.placements) t.set(posKey(position), card)
+    userScore = score(t, move.placements.map(p => p.position), { cardsPlayedThisTurn: move.placements.length }).total
+  }
+
+  if (puzzle.mode === 'top-score') {
+    return { solved: valid && userScore === bestScore, userScore, bestScore, best }
+  }
+
+  // concept (play): solved iff legal AND satisfies the predicate; never reveal the play-solver's best
+  const ok = valid && !!puzzle.conceptCheck && CONCEPT_CHECKS[puzzle.conceptCheck](grid, move.placements)
+  return { solved: ok, userScore, bestScore, best: [] }
 }

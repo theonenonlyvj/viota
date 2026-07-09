@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { posKey } from '@viota/engine'
 import type { Card, Grid, RegularCard } from '@viota/engine'
-import { enumerateLegalPlays, bestPlays, cardIdentity, playKey, CONCEPT_CHECKS } from './solver'
+import { enumerateLegalPlays, bestPlays, cardIdentity, playKey, CONCEPT_CHECKS, gradeUserMove } from './solver'
+import type { Puzzle, UserMove } from './types'
 
 const R = (color: any, shape: any, number: any): RegularCard => ({ kind: 'regular', color, shape, number })
 const WILD: Card = { kind: 'wild' }
@@ -83,5 +84,31 @@ describe('CONCEPT_CHECKS', () => {
       { card: R('red', 'circle', 4), position: { x: 3, y: 0 } },
     ]
     expect(CONCEPT_CHECKS['spans-both-ends'](grid, placements)).toBe(true)
+  })
+})
+
+const topScorePuzzle: Puzzle = {
+  id: 't', title: 'lot', concept: 'complete a lot', mode: 'top-score', answerKind: 'play',
+  instruction: 'Score the most.', explanation: 'the lot doubles',
+  position: { grid: [[posKey({ x: 0, y: 0 }), R('red', 'circle', 1)]], hand: [R('red', 'circle', 2), R('red', 'circle', 3), R('red', 'circle', 4)] },
+}
+
+describe('gradeUserMove', () => {
+  it('top-score: the optimal 3-card lot is solved', () => {
+    const move: UserMove = { action: 'play', placements: [
+      { card: R('red', 'circle', 2), position: { x: 1, y: 0 } },
+      { card: R('red', 'circle', 3), position: { x: 2, y: 0 } },
+      { card: R('red', 'circle', 4), position: { x: 3, y: 0 } },
+    ] }
+    const g = gradeUserMove(topScorePuzzle, move)
+    expect(g.bestScore).toBe(20)
+    expect(g.userScore).toBe(20)
+    expect(g.solved).toBe(true)
+  })
+  it('top-score: a suboptimal single card is not solved', () => {
+    const move: UserMove = { action: 'play', placements: [{ card: R('red', 'circle', 2), position: { x: 1, y: 0 } }] }
+    const g = gradeUserMove(topScorePuzzle, move)
+    expect(g.solved).toBe(false)
+    expect(g.userScore).toBeLessThan(g.bestScore)
   })
 })
