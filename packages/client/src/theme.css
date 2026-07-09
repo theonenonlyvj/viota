@@ -3,7 +3,7 @@
   --cyan-1: #0a91b5; --cyan-2: #1e5fd0; --cyan-shadow: #06394a;
   --coral-1: #e0521f; --coral-2: #e01f47; --coral-shadow: #7a2417;
   --text-hi: #fff; --text-body: #eef1f6; --text-muted: #b9d6e0;
-  --text-wink: #a9c9d6; --text-footer: #9fb6c2;
+  --text-wink: #a9c9d6; --text-footer: #9fb6c2; --text-error: #ff6b6b;
   --link: #22d3ee; --link-hover: #67e8f9;
   --chamfer: polygon(13px 0, 100% 0, 100% calc(100% - 13px), calc(100% - 13px) 100%, 0 100%, 0 13px);
 }
@@ -44,6 +44,10 @@ body { font-family: 'Fredoka', system-ui, sans-serif; }
 .viota-btn--secondary .viota-btn__face { background: linear-gradient(120deg, var(--coral-1), var(--coral-2)); }
 .viota-btn--secondary:hover { filter: drop-shadow(3px 4px 0 var(--coral-shadow)); }
 .viota-btn--secondary:active { filter: drop-shadow(0 0 0 var(--coral-shadow)); }
+.viota-btn:disabled { opacity: .5; cursor: default; }
+.viota-btn:disabled:hover, .viota-btn:disabled:active { transform: none; }
+.viota-btn--primary:disabled:hover, .viota-btn--primary:disabled:active { filter: drop-shadow(5px 6px 0 var(--cyan-shadow)); }
+.viota-btn--secondary:disabled:hover, .viota-btn--secondary:disabled:active { filter: drop-shadow(5px 6px 0 var(--coral-shadow)); }
 
 /* footer */
 .foot { background: var(--bg-footer); border-top: 1px solid rgba(255,255,255,.08);

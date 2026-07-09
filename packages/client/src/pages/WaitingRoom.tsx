@@ -139,7 +139,7 @@ export default function WaitingRoom() {
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 16 }}>AI takeover: {aiTakeoverLabel(aiTakeoverMs)}</p>
       </div>
 
-      {error && <p style={{ color: '#ff6b6b', fontSize: 13 }}>{error}</p>}
+      {error && <p style={{ color: 'var(--text-error)', fontSize: 13 }}>{error}</p>}
 
       {isHost ? (
         <Button variant="primary" disabled={!canStart} onClick={handleStart}>Start Game</Button>
