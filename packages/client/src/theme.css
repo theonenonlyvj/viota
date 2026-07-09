@@ -90,3 +90,25 @@ body { font-family: 'Fredoka', system-ui, sans-serif; }
   .pc-layer { display: none; }
   .hero-cards-mobile { display: flex; margin-top: 22px; }
 }
+
+/* --- lobby / waiting-room (slice 2) --- */
+.field { width: 100%; background: rgba(255,255,255,.06); color: var(--text-body);
+  border: 1.5px solid rgba(255,255,255,.16); border-radius: 10px; padding: 12px 16px;
+  font-family: 'Fredoka'; font-weight: 500; font-size: 15px; }
+.field::placeholder { color: var(--text-muted); opacity: .8; }
+.field:focus-visible { outline: none; border-color: var(--brand-cyan); box-shadow: 0 0 0 3px rgba(34,211,238,.25); }
+
+.panel { background: #140a1e; border: 1px solid rgba(255,255,255,.12); clip-path: var(--chamfer); padding: 22px; }
+.panel__label { margin: 0 0 14px; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-muted); font-weight: 600; }
+.panel__sublabel { margin: 16px 0 8px; font-size: 12px; color: var(--text-muted); }
+
+.seat-row { display: flex; align-items: center; gap: 8px; background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.14); clip-path: var(--chamfer); padding: 9px 14px;
+  color: var(--text-body); font-family: 'Fredoka'; font-size: 14px; }
+.seat-row--open { opacity: .5; }
+.seat-row__tag { margin-left: auto; font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .08em; }
+
+.ghost-btn { background: transparent; border: 1px solid rgba(255,255,255,.2); color: var(--text-muted);
+  border-radius: 8px; padding: 8px 22px; font-family: 'Fredoka'; font-weight: 500; font-size: 13px; cursor: pointer; }
+.ghost-btn:hover { color: var(--text-body); border-color: rgba(255,255,255,.35); }
+.ghost-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(34,211,238,.3); }
