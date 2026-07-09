@@ -169,5 +169,5 @@ test('Start is disabled with fewer than 2 humans', async () => {
   })
   render(<MemoryRouter><WaitingRoom /></MemoryRouter>)
   await screen.findByText(/Alice/)
-  expect(screen.getByText('Start Game')).toBeDisabled()
+  expect(screen.getByRole('button', { name: 'Start Game' })).toBeDisabled()
 })
