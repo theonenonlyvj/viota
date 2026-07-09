@@ -9,6 +9,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource/fredoka": "^5.2.10",
+    "@fontsource/luckiest-guy": "^5.2.8",
     "@viota/engine": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
