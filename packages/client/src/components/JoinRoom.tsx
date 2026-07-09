@@ -12,13 +12,16 @@ const SERVER_URL = serverUrl()
  *  the room. On success saves the session + calls onJoined so the Room gate
  *  swaps in the WaitingRoom. Reuses joinOnlineGame — no new network. */
 export default function JoinRoom({ code, onJoined }: { code: string; onJoined: () => void }) {
-  const initial = getDisplayName()
-  const [name, setName] = useState(initial === 'Player' ? '' : initial)
+  const [name, setName] = useState(() => {
+    const initial = getDisplayName()
+    return initial === 'Player' ? '' : initial
+  })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
   async function handleJoin() {
+    if (busy) return
     if (!name.trim()) { setError('Name is required'); return }
     setError(''); setBusy(true)
     try {
@@ -40,7 +43,7 @@ export default function JoinRoom({ code, onJoined }: { code: string; onJoined: (
       <div className="panel" style={{ width: '100%', maxWidth: 380, textAlign: 'center' }}>
         <p className="panel__label" style={{ textAlign: 'center' }}>You're invited</p>
         <div style={{ fontFamily: 'Luckiest Guy', fontSize: 40, color: 'var(--brand-cyan)', letterSpacing: 8, textShadow: '0 0 28px rgba(34,211,238,.5)' }}>{code}</div>
-        <input className="field" style={{ margin: '20px 0 0' }} placeholder="Your name" value={name}
+        <input className="field" aria-label="Your name" style={{ margin: '20px 0 0' }} placeholder="Your name" value={name}
           onChange={(e) => setName(e.target.value)} maxLength={24}
           onKeyDown={(e) => { if (e.key === 'Enter') handleJoin() }} />
         {error && <p style={{ color: 'var(--text-error)', fontSize: 13, margin: '10px 0 0' }}>{error}</p>}
