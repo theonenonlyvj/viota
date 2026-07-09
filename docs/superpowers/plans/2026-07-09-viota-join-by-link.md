@@ -142,7 +142,7 @@ export default function JoinRoom({ code, onJoined }: { code: string; onJoined: (
         vi<span style={{ color: 'var(--brand-cyan)' }}>o</span>ta
       </h1>
       <div className="panel" style={{ width: '100%', maxWidth: 380, textAlign: 'center' }}>
-        <p className="panel__label" style={{ textAlign: 'center' }}>Join room</p>
+        <p className="panel__label" style={{ textAlign: 'center' }}>You're invited</p>
         <div style={{ fontFamily: 'Luckiest Guy', fontSize: 40, color: 'var(--brand-cyan)', letterSpacing: 8, textShadow: '0 0 28px rgba(34,211,238,.5)' }}>{code}</div>
         <input className="field" style={{ margin: '20px 0 0' }} placeholder="Your name" value={name}
           onChange={(e) => setName(e.target.value)} maxLength={24}
