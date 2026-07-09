@@ -9,6 +9,7 @@ import Game from './pages/Game'
 import Lobby from './pages/Lobby'
 import WaitingRoom from './pages/WaitingRoom'
 import OnlineGame from './pages/OnlineGame'
+import Practice from './pages/Practice'
 
 export function AppRoutes() {
   return (
@@ -17,6 +18,7 @@ export function AppRoutes() {
         <Route path="/" element={<Home />} />
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/lobby/:code" element={<WaitingRoom />} />
+        <Route path="/practice" element={<Practice />} />
       </Route>
       <Route path="/game/local" element={<Game />} />
       <Route path="/game/online" element={<OnlineGame />} />

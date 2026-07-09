@@ -29,6 +29,11 @@ const MOBILE_CARDS: { card: CardType; rot: number }[] = [
   { card: { kind: 'wild' }, rot: 14 },
 ]
 
+const navLink: React.CSSProperties = {
+  background: 'none', border: 'none', color: '#eaf6fb',
+  fontFamily: 'Fredoka', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+}
+
 export default function Home() {
   const navigate = useNavigate()
   const [aiOpen, setAiOpen] = useState(false)
@@ -41,10 +46,10 @@ export default function Home() {
         <span aria-hidden style={{ fontFamily: 'Luckiest Guy', color: '#fff', fontSize: 22, letterSpacing: '.02em', textShadow: '0 0 16px rgba(34,211,238,.5)' }}>
           vi<span style={{ color: 'var(--brand-cyan)' }}>o</span>ta
         </span>
-        <button onClick={() => setHowToOpen(true)}
-          style={{ background: 'none', border: 'none', color: '#eaf6fb', fontFamily: 'Fredoka', fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-          how to play
-        </button>
+        <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
+          <button type="button" onClick={() => navigate('/practice')} style={navLink}>practice</button>
+          <button type="button" onClick={() => setHowToOpen(true)} style={navLink}>how to play</button>
+        </div>
       </div>
 
       {/* scattered real-card art (pointer-events none so it never blocks buttons) */}

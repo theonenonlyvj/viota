@@ -31,8 +31,14 @@ test('Play vs AI opens the setup modal', async () => {
   expect(screen.getByRole('dialog', { name: /play vs ai/i })).toBeInTheDocument()
 })
 
-test('how to play opens the placeholder', async () => {
+test('how to play opens the how-to-play modal', async () => {
   renderHome()
   await userEvent.click(screen.getByRole('button', { name: /how to play/i }))
   expect(screen.getByRole('dialog', { name: /how to play/i })).toBeInTheDocument()
+})
+
+test('practice link navigates to /practice', async () => {
+  renderHome()
+  await userEvent.click(screen.getByRole('button', { name: /^practice$/i }))
+  expect(navigate).toHaveBeenCalledWith('/practice')
 })

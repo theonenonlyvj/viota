@@ -8,6 +8,7 @@ vi.mock('./pages/Lobby', () => ({ default: () => <div>lobby</div> }))
 vi.mock('./pages/WaitingRoom', () => ({ default: () => <div>waiting</div> }))
 vi.mock('./pages/Game', () => ({ default: () => <div>local game</div> }))
 vi.mock('./pages/OnlineGame', () => ({ default: () => <div>online game</div> }))
+vi.mock('./pages/Practice', () => ({ default: () => <div>practice</div> }))
 
 import { AppRoutes } from './main'
 
@@ -16,7 +17,7 @@ function at(path: string) {
 }
 
 test('footer shows on chrome routes', () => {
-  for (const p of ['/', '/lobby', '/lobby/ABC123']) {
+  for (const p of ['/', '/lobby', '/lobby/ABC123', '/practice']) {
     const { unmount } = at(p)
     expect(screen.getByRole('contentinfo')).toBeInTheDocument()
     unmount()
