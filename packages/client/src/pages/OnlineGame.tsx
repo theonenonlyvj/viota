@@ -5,6 +5,8 @@ import Board, { type BoardHandle } from '../components/Board'
 import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
+import SettingsMenu from '../components/SettingsMenu'
+import HowToPlay from '../components/HowToPlay'
 import { serverUrl } from '../net/config'
 import { createOnlineClient } from '../net/online'
 import { createNudgeChannel } from '../net/nudge'
@@ -21,6 +23,8 @@ export default function OnlineGame() {
   const boardRef = useRef<BoardHandle>(null)
   const [showPassModal, setShowPassModal] = useState(false)
   const [session, setSession] = useState<OnlineSession | null>(() => loadSession())
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [howToOpen, setHowToOpen] = useState(false)
 
   const phase = useGameStore(s => s.phase)
   const scores = useGameStore(s => s.scores)
@@ -139,6 +143,7 @@ export default function OnlineGame() {
         onRotateCW={() => boardRef.current?.rotateCW()}
         onRotateCCW={() => boardRef.current?.rotateCCW()}
         playerNames={players}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       {reclaimable && (
@@ -211,6 +216,15 @@ export default function OnlineGame() {
           onClose={() => setShowPassModal(false)}
         />
       )}
+
+      {settingsOpen && (
+        <SettingsMenu
+          onClose={() => setSettingsOpen(false)}
+          onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
+          onQuit={() => navigate('/')}
+        />
+      )}
+      {howToOpen && <HowToPlay onClose={() => setHowToOpen(false)} />}
 
       {finished && (
         <div style={{
