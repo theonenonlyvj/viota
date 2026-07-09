@@ -45,13 +45,13 @@ export default function PlayVsAiModal({ open, onClose }: { open: boolean; onClos
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>AI opponents</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           {[1, 2, 3].map((n) => (
-            <button key={n} className="modal-pill" style={pill(opponents === n)} onClick={() => setOpponents(n)}>{n}</button>
+            <button type="button" key={n} className="modal-pill" style={pill(opponents === n)} onClick={() => setOpponents(n)}>{n}</button>
           ))}
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>Difficulty</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
-          <button className="modal-pill" style={pill(difficulty === 'easy')} onClick={() => setDifficulty('easy')}>RickBot · not optimizing for points</button>
-          <button className="modal-pill" style={pill(difficulty === 'expert')} onClick={() => setDifficulty('expert')}>Expert</button>
+          <button type="button" className="modal-pill" style={pill(difficulty === 'easy')} onClick={() => setDifficulty('easy')}>RickBot · not optimizing for points</button>
+          <button type="button" className="modal-pill" style={pill(difficulty === 'expert')} onClick={() => setDifficulty('expert')}>Expert</button>
         </div>
         <Button variant="primary" onClick={start}>Start game</Button>
       </div>
