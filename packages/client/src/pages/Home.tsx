@@ -38,7 +38,7 @@ export default function Home() {
     <div className="hero">
       {/* top bar */}
       <div style={{ position: 'absolute', top: 26, left: '8vw', right: '8vw', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 6 }}>
-        <span style={{ fontFamily: 'Luckiest Guy', color: '#fff', fontSize: 22, letterSpacing: '.02em', textShadow: '0 0 16px rgba(34,211,238,.5)' }}>
+        <span aria-hidden style={{ fontFamily: 'Luckiest Guy', color: '#fff', fontSize: 22, letterSpacing: '.02em', textShadow: '0 0 16px rgba(34,211,238,.5)' }}>
           vi<span style={{ color: 'var(--brand-cyan)' }}>o</span>ta
         </span>
         <button onClick={() => setHowToOpen(true)}
