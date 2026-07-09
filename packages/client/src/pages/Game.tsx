@@ -6,7 +6,7 @@ import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
 import SettingsMenu from '../components/SettingsMenu'
-import HowToPlay from '../components/HowToPlay'
+import HowToPlayModal from '../components/HowToPlayModal'
 import { recordGhostGame } from '../net/ghost'
 import type { Move } from '@viota/engine'
 
@@ -143,15 +143,14 @@ export default function Game() {
         />
       )}
 
-      {settingsOpen && (
-        <SettingsMenu
-          onClose={() => setSettingsOpen(false)}
-          onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
-          onQuit={() => navigate('/')}
-          onNewGame={() => { setSettingsOpen(false); startGame(playerCount, difficulty) }}
-        />
-      )}
-      {howToOpen && <HowToPlay onClose={() => setHowToOpen(false)} />}
+      <SettingsMenu
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
+        onQuit={() => navigate('/')}
+        onNewGame={() => { setSettingsOpen(false); startGame(playerCount, difficulty) }}
+      />
+      <HowToPlayModal open={howToOpen} onClose={() => setHowToOpen(false)} />
 
       {phase === 'game-over' && (
         <div style={{
