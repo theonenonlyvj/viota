@@ -5,7 +5,7 @@ import { vi } from 'vitest'
 // stub the heavy pages so the routing test stays about the footer
 vi.mock('./pages/Home', () => ({ default: () => <div>home</div> }))
 vi.mock('./pages/Lobby', () => ({ default: () => <div>lobby</div> }))
-vi.mock('./pages/WaitingRoom', () => ({ default: () => <div>waiting</div> }))
+vi.mock('./pages/Room', () => ({ default: () => <div>room</div> }))
 vi.mock('./pages/Game', () => ({ default: () => <div>local game</div> }))
 vi.mock('./pages/OnlineGame', () => ({ default: () => <div>online game</div> }))
 vi.mock('./pages/Practice', () => ({ default: () => <div>practice</div> }))
