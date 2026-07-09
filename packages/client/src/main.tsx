@@ -6,6 +6,7 @@ import Game from './pages/Game'
 import Lobby from './pages/Lobby'
 import WaitingRoom from './pages/WaitingRoom'
 import OnlineGame from './pages/OnlineGame'
+import Practice from './pages/Practice'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -16,6 +17,7 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/lobby/:code" element={<WaitingRoom />} />
         <Route path="/game/online" element={<OnlineGame />} />
+        <Route path="/practice" element={<Practice />} />
       </Routes>
     </BrowserRouter>
   </StrictMode>
