@@ -3,6 +3,7 @@ import { posKey } from '@viota/engine'
 import type { Card, Grid, RegularCard } from '@viota/engine'
 import { enumerateLegalPlays, bestPlays, cardIdentity, playKey, CONCEPT_CHECKS, gradeUserMove } from './solver'
 import type { Puzzle, UserMove } from './types'
+import { bruteForceBest } from './oracle'
 
 const R = (color: any, shape: any, number: any): RegularCard => ({ kind: 'regular', color, shape, number })
 const WILD: Card = { kind: 'wild' }
@@ -110,5 +111,24 @@ describe('gradeUserMove', () => {
     const g = gradeUserMove(topScorePuzzle, move)
     expect(g.solved).toBe(false)
     expect(g.userScore).toBeLessThan(g.bestScore)
+  })
+})
+
+describe('solver vs independent oracle (tiny boards)', () => {
+  const boards: { grid: Grid; hand: Card[] }[] = [
+    { grid: gridOf([[0, 0, R('red', 'circle', 1)]]), hand: [R('red', 'circle', 2), R('red', 'circle', 3), R('red', 'circle', 4)] },
+    { grid: gridOf([[0, 0, R('blue', 'triangle', 2)], [1, 0, R('red', 'plus', 2)]]), hand: [R('green', 'circle', 2), R('yellow', 'square', 2)] },
+    { grid: gridOf([[0, 0, R('red', 'circle', 1)], [0, 1, R('red', 'circle', 2)]]), hand: [R('red', 'circle', 3), WILD] },
+  ]
+  it.each(boards.map((b, i) => [i, b] as const))('board %i: bestPlays max equals oracle', (_i, b) => {
+    const solverMax = bestPlays(b.grid, b.hand).reduce((m, p) => Math.max(m, p.total), 0)
+    expect(solverMax).toBe(bruteForceBest(b.grid, b.hand))
+  })
+
+  it('regression: far-extension lot is found (not lost to a static frontier)', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const hand: Card[] = [R('red', 'circle', 2), R('red', 'circle', 3), R('red', 'circle', 4)]
+    expect(bestPlays(grid, hand)[0].total).toBe(20)
+    expect(bestPlays(grid, hand)[0].total).toBe(bruteForceBest(grid, hand))
   })
 })
