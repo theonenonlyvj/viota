@@ -10,6 +10,12 @@ importers:
 
   packages/client:
     dependencies:
+      '@fontsource/fredoka':
+        specifier: ^5.2.10
+        version: 5.2.10
+      '@fontsource/luckiest-guy':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@viota/engine':
         specifier: workspace:*
         version: link:../engine
@@ -1079,6 +1085,12 @@ packages:
   '@fastify/busboy@2.1.1':
     resolution: {integrity: sha512-vBZP4NlzfOlerQTnba4aqZoMhE/a9HY7HRqoOPaETQcSQuWEIyZMHGfVu6w9wGtGK5fED5qRs2DteVCjOH60sA==}
     engines: {node: '>=14'}
+
+  '@fontsource/fredoka@5.2.10':
+    resolution: {integrity: sha512-DyzPCmTf0PkBbAu+gNvnPzfD/dYIXlyp+Zcb76jEQyt/vmRKGZgkH8FFF9W2sICDaA5p+GLk1XGFjWh5PPX+lg==}
+
+  '@fontsource/luckiest-guy@5.2.8':
+    resolution: {integrity: sha512-S1k8+PNHSdDkJy9f+0WIx8rfScj3BZTVgBQehMOtpYOwXZ4wZC1+D++NACbfdG9Ve2glVz1boLXjJMCeVPLifA==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -3350,6 +3362,10 @@ snapshots:
     optional: true
 
   '@fastify/busboy@2.1.1': {}
+
+  '@fontsource/fredoka@5.2.10': {}
+
+  '@fontsource/luckiest-guy@5.2.8': {}
 
   '@img/colour@1.1.0': {}
 
