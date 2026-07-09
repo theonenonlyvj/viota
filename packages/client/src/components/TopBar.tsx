@@ -14,6 +14,7 @@ type Props = {
   playerNames?: string[]
   turnTimer?: number
   connectionStatus?: 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
+  onOpenSettings?: () => void
 }
 
 const pill: React.CSSProperties = {
@@ -24,7 +25,7 @@ const btn: React.CSSProperties = {
   borderRadius: 4, padding: '3px 10px', fontSize: 13, cursor: 'pointer',
 }
 
-export default function TopBar({ scores, drawPileCount, playerCount, humanIndex, difficulty, onZoomIn, onZoomOut, onAutoFit, onRotateCW, onRotateCCW, playerNames, turnTimer, connectionStatus }: Props) {
+export default function TopBar({ scores, drawPileCount, playerCount, humanIndex, difficulty, onZoomIn, onZoomOut, onAutoFit, onRotateCW, onRotateCCW, playerNames, turnTimer, connectionStatus, onOpenSettings }: Props) {
   return (
     <div style={{ background: '#12122a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #2a2a4a', flexShrink: 0 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -47,6 +48,9 @@ export default function TopBar({ scores, drawPileCount, playerCount, humanIndex,
         </div>
       )}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        {onOpenSettings && (
+          <button style={btn} onClick={onOpenSettings} aria-label="settings">⚙</button>
+        )}
         {connectionStatus && (
           <div
             data-testid="connection-dot"

@@ -5,6 +5,8 @@ import Board, { type BoardHandle } from '../components/Board'
 import Hand from '../components/Hand'
 import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
+import SettingsMenu from '../components/SettingsMenu'
+import HowToPlayModal from '../components/HowToPlayModal'
 import { recordGhostGame } from '../net/ghost'
 import type { Move } from '@viota/engine'
 
@@ -12,6 +14,8 @@ export default function Game() {
   const navigate = useNavigate()
   const boardRef = useRef<BoardHandle>(null)
   const [showPassModal, setShowPassModal] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [howToOpen, setHowToOpen] = useState(false)
 
   const grid = useGameStore(s => s.grid)
 
@@ -83,6 +87,7 @@ export default function Game() {
         onAutoFit={() => boardRef.current?.autofit()}
         onRotateCW={() => boardRef.current?.rotateCW()}
         onRotateCCW={() => boardRef.current?.rotateCCW()}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
 
       <Board ref={boardRef} />
@@ -137,6 +142,15 @@ export default function Game() {
           onClose={() => setShowPassModal(false)}
         />
       )}
+
+      <SettingsMenu
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        onOpenHowToPlay={() => { setSettingsOpen(false); setHowToOpen(true) }}
+        onQuit={() => navigate('/')}
+        onNewGame={() => { setSettingsOpen(false); startGame(playerCount, difficulty) }}
+      />
+      <HowToPlayModal open={howToOpen} onClose={() => setHowToOpen(false)} />
 
       {phase === 'game-over' && (
         <div style={{

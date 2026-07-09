@@ -61,3 +61,17 @@ test('renders connection status dot', () => {
   const dot = container.querySelector('[data-testid="connection-dot"]') as HTMLElement
   expect(dot).toBeInTheDocument()
 })
+
+test('does not render a settings gear when onOpenSettings is omitted', () => {
+  render(<TopBar {...defaultProps} />)
+  expect(screen.queryByLabelText('settings')).not.toBeInTheDocument()
+})
+
+test('settings gear renders and calls onOpenSettings when clicked', async () => {
+  const onOpenSettings = vi.fn()
+  render(<TopBar {...defaultProps} onOpenSettings={onOpenSettings} />)
+  const gear = screen.getByLabelText('settings')
+  expect(gear).toBeInTheDocument()
+  await userEvent.click(gear)
+  expect(onOpenSettings).toHaveBeenCalledOnce()
+})
