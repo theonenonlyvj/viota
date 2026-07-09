@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { serverUrl } from '../net/config'
-import { createOnlineGame, createOnlineRoom, joinOnlineGame } from '../net/lobby'
+import { createOnlineRoom, joinOnlineGame } from '../net/lobby'
 import { claimGhostGames } from '../net/ghost'
 import { saveSession } from '../net/session'
+import Button from '../components/Button'
 import ResumeStrip from '../components/ResumeStrip'
 
 const SERVER_URL = serverUrl()
 
-/** How long to wait for a dropped player before an AI takes their turn.
- *  `0` = "wait for me" (never auto-cover). Default = 1 minute (60000). */
+/** AI-takeover patience for a dropped player. `0` = "wait for me" (never cover). */
 const AI_TAKEOVER_OPTIONS: { label: string; value: number }[] = [
   { label: '30 sec', value: 30000 },
   { label: '1 min', value: 60000 },
@@ -18,36 +18,27 @@ const AI_TAKEOVER_OPTIONS: { label: string; value: number }[] = [
   { label: 'Wait for me', value: 0 },
 ]
 
+const pill = (active: boolean): React.CSSProperties => ({
+  background: active ? 'rgba(34,211,238,.18)' : 'rgba(255,255,255,.06)',
+  border: active ? '1.5px solid var(--brand-cyan)' : '1.5px solid rgba(255,255,255,.2)',
+  color: '#fff', clipPath: 'var(--chamfer)', padding: '8px 16px', cursor: 'pointer',
+  fontFamily: 'Fredoka', fontWeight: 500, fontSize: 14,
+})
+
 export default function Lobby() {
   const [name, setName] = useState('')
-  const [opponents, setOpponents] = useState(1)
+  const [players, setPlayers] = useState(2)          // total seats (2–4)
   const [roomCode, setRoomCode] = useState('')
   const [aiTakeoverMs, setAiTakeoverMs] = useState(60000)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const navigate = useNavigate()
 
-  async function handleSolo() {
-    if (!name.trim()) { setError('Name is required'); return }
-    setError(''); setBusy(true)
-    try {
-      const created = await createOnlineGame(SERVER_URL, { displayName: name.trim(), opponents })
-      // Claim any device ghost games into the fresh account (fire-and-forget).
-      claimGhostGames(SERVER_URL).catch(() => {})
-      saveSession({ gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players })
-      navigate('/game/online')
-    } catch {
-      setError(`Cannot reach server at ${SERVER_URL}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   async function handleCreateRoom() {
     if (!name.trim()) { setError('Name is required'); return }
     setError(''); setBusy(true)
     try {
-      const created = await createOnlineRoom(SERVER_URL, { displayName: name.trim(), playerCount: opponents + 1, aiTakeoverMs })
+      const created = await createOnlineRoom(SERVER_URL, { displayName: name.trim(), playerCount: players, aiTakeoverMs })
       claimGhostGames(SERVER_URL).catch(() => {})
       saveSession({ gameId: created.gameId, code: created.code, mySeat: created.mySeat, players: created.players })
       navigate(`/lobby/${created.code}`)
@@ -73,74 +64,47 @@ export default function Lobby() {
     }
   }
 
-  const inputStyle: React.CSSProperties = {
-    background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#e2e8f0',
-    borderRadius: 7, padding: '8px 14px', fontSize: 14, width: '100%',
-  }
-  const btnStyle: React.CSSProperties = {
-    background: '#3b82f6', border: 'none', color: '#fff',
-    borderRadius: 7, padding: '10px 24px', fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
-  }
-  const optBtn = (active: boolean): React.CSSProperties => ({
-    background: active ? '#3b82f6' : '#1e1e3a',
-    border: active ? '1px solid #3b82f6' : '1px solid #3a3a5a',
-    color: '#fff', borderRadius: 7, padding: '8px 18px', fontSize: 14, cursor: 'pointer',
-    fontWeight: active ? 'bold' : 'normal',
-  })
-
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 28 }}>
-      <h1 style={{ fontSize: 48, fontWeight: 'bold', color: '#e2e8f0', letterSpacing: 4 }}>Viota</h1>
-      <input style={inputStyle} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
-      {error && <p style={{ color: '#ef4444', fontSize: 13, maxWidth: 320, textAlign: 'center' }}>{error}</p>}
+    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 24, padding: '84px 20px 48px' }}>
+      <h1 style={{ fontFamily: 'Luckiest Guy', fontSize: 'clamp(44px, 8vw, 68px)', color: '#fff', letterSpacing: '.01em', textShadow: '0 0 42px rgba(34,211,238,.4)' }}>
+        vi<span style={{ color: 'var(--brand-cyan)' }}>o</span>ta
+      </h1>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, width: 300 }}>
-        <div>
-          <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>Opponents</p>
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
-            {[1, 2, 3].map(n => (
-              <button key={n} style={optBtn(opponents === n)} onClick={() => setOpponents(n)}>{n}</button>
+      <input className="field" style={{ maxWidth: 360 }} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
+      {error && <p style={{ color: '#ff6b6b', fontSize: 13, maxWidth: 340, textAlign: 'center' }}>{error}</p>}
+
+      <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 780 }}>
+        {/* CREATE */}
+        <div className="panel" style={{ flex: '1 1 300px', maxWidth: 380 }}>
+          <p className="panel__label">Create a room</p>
+          <p className="panel__sublabel" style={{ marginTop: 0 }}>Players</p>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[2, 3, 4].map(n => (
+              <button key={n} className="modal-pill" aria-pressed={players === n} style={pill(players === n)} onClick={() => setPlayers(n)}>{n}</button>
             ))}
           </div>
-        </div>
-        <button style={{ ...btnStyle, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleSolo}>
-          Play vs AI
-        </button>
-        <div>
-          <p style={{ color: '#9ca3af', fontSize: 12, marginBottom: 8, textAlign: 'center' }}>
-            AI takeover for a dropped player (multiplayer)
-          </p>
-          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <p className="panel__sublabel">If someone drops, AI covers after</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {AI_TAKEOVER_OPTIONS.map(o => (
-              <button
-                key={o.value}
-                style={optBtn(aiTakeoverMs === o.value)}
-                aria-pressed={aiTakeoverMs === o.value}
-                onClick={() => setAiTakeoverMs(o.value)}
-              >
-                {o.label}
-              </button>
+              <button key={o.value} className="modal-pill" aria-pressed={aiTakeoverMs === o.value} style={pill(aiTakeoverMs === o.value)} onClick={() => setAiTakeoverMs(o.value)}>{o.label}</button>
             ))}
           </div>
-        </div>
-        <button style={{ ...btnStyle, background: '#8b5cf6', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleCreateRoom}>
-          Create Room
-        </button>
-
-        <div style={{ borderTop: '1px solid #2a2a4a', paddingTop: 16 }}>
-          <input
-            style={{ ...inputStyle, marginBottom: 10, textTransform: 'uppercase', textAlign: 'center', letterSpacing: 6, fontSize: 16 }}
-            placeholder="Room code" value={roomCode} onChange={e => setRoomCode(e.target.value)} maxLength={8}
-          />
-          <button style={{ ...btnStyle, width: '100%', opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={handleJoin}>Join Room</button>
+          <div style={{ marginTop: 22 }}>
+            <Button variant="primary" disabled={busy} onClick={handleCreateRoom}>Create Room</Button>
+          </div>
         </div>
 
-        <ResumeStrip />
+        {/* JOIN */}
+        <div className="panel" style={{ flex: '1 1 240px', maxWidth: 380, display: 'flex', flexDirection: 'column' }}>
+          <p className="panel__label">Join a room</p>
+          <input className="field" style={{ textTransform: 'uppercase', textAlign: 'center', letterSpacing: 6, fontSize: 16, marginBottom: 16 }} placeholder="Room code" value={roomCode} onChange={e => setRoomCode(e.target.value)} maxLength={8} />
+          <Button variant="secondary" disabled={busy} onClick={handleJoin}>Join Room</Button>
+        </div>
       </div>
 
-      <button onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid #3a3a5a', color: '#9ca3af', borderRadius: 7, padding: '8px 24px', fontSize: 12, cursor: 'pointer' }}>
-        Back to Home
-      </button>
+      <ResumeStrip />
+
+      <button className="ghost-btn" onClick={() => navigate('/')}>Back to Home</button>
     </div>
   )
 }

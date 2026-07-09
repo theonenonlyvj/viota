@@ -10,12 +10,10 @@ vi.mock('react-router-dom', async () => {
   return { ...actual, useNavigate: () => mockNavigate }
 })
 
-const createOnlineGame = vi.fn()
 const createOnlineRoom = vi.fn()
 const joinOnlineGame = vi.fn()
 const myGames = vi.fn().mockResolvedValue([])
 vi.mock('../net/lobby', () => ({
-  createOnlineGame: (...a: unknown[]) => createOnlineGame(...a),
   createOnlineRoom: (...a: unknown[]) => createOnlineRoom(...a),
   joinOnlineGame: (...a: unknown[]) => joinOnlineGame(...a),
   myGames: (...a: unknown[]) => myGames(...a),
@@ -24,28 +22,18 @@ vi.mock('../net/ghost', () => ({ claimGhostGames: vi.fn().mockResolvedValue({ cl
 
 beforeEach(() => {
   mockNavigate.mockClear()
-  createOnlineGame.mockReset()
   createOnlineRoom.mockReset()
   joinOnlineGame.mockReset()
   sessionStorage.clear()
 })
 
-test('renders name input, opponent selector, and the three actions', () => {
+test('renders name input, Players selector, Create/Join — and NO solo Play-vs-AI', () => {
   render(<MemoryRouter><Lobby /></MemoryRouter>)
   expect(screen.getByPlaceholderText('Your name')).toBeInTheDocument()
-  expect(screen.getByText('Play vs AI')).toBeInTheDocument()
+  expect(screen.getByText('Players')).toBeInTheDocument()
   expect(screen.getByText('Create Room')).toBeInTheDocument()
   expect(screen.getByText('Join Room')).toBeInTheDocument()
-  expect(screen.getByText('Opponents')).toBeInTheDocument()
-})
-
-test('Play vs AI creates a solo game and navigates straight to the game', async () => {
-  createOnlineGame.mockResolvedValue({ gameId: 'g1', code: 'ABCDEF', mySeat: 0, players: ['Alice', 'AI 2'] })
-  render(<MemoryRouter><Lobby /></MemoryRouter>)
-  await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
-  await userEvent.click(screen.getByText('Play vs AI'))
-  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game/online'))
-  expect(sessionStorage.getItem('viota_online_session')).toContain('g1')
+  expect(screen.queryByText('Play vs AI')).not.toBeInTheDocument()
 })
 
 test('Create Room creates a multiplayer room and navigates to the waiting room', async () => {
@@ -57,13 +45,23 @@ test('Create Room creates a multiplayer room and navigates to the waiting room',
   expect(sessionStorage.getItem('viota_online_session')).toContain('g2')
 })
 
-test('Create Room sends the DEFAULT aiTakeoverMs (1 min) when untouched', async () => {
+test('Create Room defaults to 2 players and the 1-min AI takeover', async () => {
   createOnlineRoom.mockResolvedValue({ gameId: 'g2', code: 'ROOMED', mySeat: 0, players: ['Alice', 'Open'] })
   render(<MemoryRouter><Lobby /></MemoryRouter>)
   await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
   await userEvent.click(screen.getByText('Create Room'))
   await waitFor(() => expect(createOnlineRoom).toHaveBeenCalled())
-  expect(createOnlineRoom.mock.calls[0]![1]).toMatchObject({ aiTakeoverMs: 60000 })
+  expect(createOnlineRoom.mock.calls[0]![1]).toMatchObject({ playerCount: 2, aiTakeoverMs: 60000 })
+})
+
+test('the Players selector sets the room size', async () => {
+  createOnlineRoom.mockResolvedValue({ gameId: 'g2', code: 'ROOMED', mySeat: 0, players: ['A','B','C','D'] })
+  render(<MemoryRouter><Lobby /></MemoryRouter>)
+  await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
+  await userEvent.click(screen.getByRole('button', { name: '4' }))
+  await userEvent.click(screen.getByText('Create Room'))
+  await waitFor(() => expect(createOnlineRoom).toHaveBeenCalled())
+  expect(createOnlineRoom.mock.calls[0]![1]).toMatchObject({ playerCount: 4 })
 })
 
 test('the AI-takeover picker sends the chosen value (Wait for me -> 0)', async () => {
@@ -77,12 +75,19 @@ test('the AI-takeover picker sends the chosen value (Wait for me -> 0)', async (
 })
 
 test('a create failure surfaces an error and does not navigate', async () => {
-  createOnlineGame.mockRejectedValue(new Error('boom'))
+  createOnlineRoom.mockRejectedValue(new Error('boom'))
   render(<MemoryRouter><Lobby /></MemoryRouter>)
   await userEvent.type(screen.getByPlaceholderText('Your name'), 'Alice')
-  await userEvent.click(screen.getByText('Play vs AI'))
+  await userEvent.click(screen.getByText('Create Room'))
   await waitFor(() => expect(screen.getByText(/Cannot reach server/)).toBeInTheDocument())
   expect(mockNavigate).not.toHaveBeenCalled()
+})
+
+test('a create requires a name', async () => {
+  render(<MemoryRouter><Lobby /></MemoryRouter>)
+  await userEvent.click(screen.getByText('Create Room'))
+  expect(await screen.findByText(/Name is required/)).toBeInTheDocument()
+  expect(createOnlineRoom).not.toHaveBeenCalled()
 })
 
 test('Join Room joins by code and navigates to the waiting room', async () => {
