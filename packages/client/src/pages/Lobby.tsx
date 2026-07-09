@@ -71,7 +71,7 @@ export default function Lobby() {
       </h1>
 
       <input className="field" style={{ maxWidth: 360 }} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
-      {error && <p style={{ color: '#ff6b6b', fontSize: 13, maxWidth: 340, textAlign: 'center' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--text-error)', fontSize: 13, maxWidth: 340, textAlign: 'center' }}>{error}</p>}
 
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 780 }}>
         {/* CREATE */}
