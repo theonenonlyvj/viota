@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { posKey } from '@viota/engine'
+import { posKey, validatePlay } from '@viota/engine'
 import type { Card, Grid, RegularCard } from '@viota/engine'
 import { enumerateLegalPlays, bestPlays, cardIdentity, playKey, CONCEPT_CHECKS, gradeUserMove } from './solver'
 import type { Puzzle, UserMove } from './types'
@@ -51,17 +51,20 @@ describe('enumerateLegalPlays', () => {
     expect(hasFarExtension).toBe(true)
   })
 
-  it('returns [] when no legal play exists', () => {
-    // A completed 4-card lot fills row y=0; the single hand card cannot legally extend it (max line length 4).
+  it('every enumerated play is legal', () => {
+    // A completed 4-card lot fills row y=0. A blue-triangle-1 can still start perpendicular
+    // 2-lines off the ends, so this board has legal plays — assert the real invariant instead
+    // of a vacuous Array.isArray check: the list is non-empty AND every returned play is legal
+    // per the engine. (A genuinely no-legal-play board is covered by the forced-pass puzzle.)
     const grid = gridOf([
       [0, 0, R('red', 'circle', 1)], [1, 0, R('red', 'circle', 2)],
       [2, 0, R('red', 'circle', 3)], [3, 0, R('red', 'circle', 4)],
     ])
-    // hand card shares nothing that could start a perpendicular line off the ends legally in a way that scores...
-    // choose a card that cannot form any valid line with any single neighbor:
     const plays = enumerateLegalPlays(grid, [R('blue', 'triangle', 1)])
-    // It may still find perpendicular 2-lines; assert instead that bestPlays is non-negative-safe:
-    expect(Array.isArray(plays)).toBe(true)
+    expect(plays.length).toBeGreaterThan(0)
+    for (const p of plays) {
+      expect(validatePlay(grid, p.placements).valid).toBe(true)
+    }
   })
 })
 
@@ -85,6 +88,69 @@ describe('CONCEPT_CHECKS', () => {
       { card: R('red', 'circle', 4), position: { x: 3, y: 0 } },
     ]
     expect(CONCEPT_CHECKS['spans-both-ends'](grid, placements)).toBe(true)
+  })
+
+  // --- positive coverage for the 4 previously-untested predicates ---
+
+  it('any-line: true for a legal 2-card line', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const placements = [{ card: R('blue', 'triangle', 2), position: { x: 1, y: 0 } }]
+    expect(CONCEPT_CHECKS['any-line'](grid, placements)).toBe(true)
+  })
+
+  it('line-all-different: true when the line is all-different on every property', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    // red-circle-1, blue-triangle-2 => color/shape/number all differ
+    const placements = [{ card: R('blue', 'triangle', 2), position: { x: 1, y: 0 } }]
+    expect(CONCEPT_CHECKS['line-all-different'](grid, placements)).toBe(true)
+  })
+
+  it('creates-second-line: true when one placement forms both a row line and a column line', () => {
+    // Existing row fragment (y=0, x=1..2) and column fragment (x=0, y=1..2); dropping
+    // yellow-circle-1 at the corner (0,0) creates two 3-card lines through it at once.
+    const grid = gridOf([
+      [1, 0, R('red', 'triangle', 2)], [2, 0, R('green', 'plus', 3)],
+      [0, 1, R('blue', 'circle', 2)], [0, 2, R('green', 'circle', 3)],
+    ])
+    const placements = [{ card: R('yellow', 'circle', 1), position: { x: 0, y: 0 } }]
+    expect(validatePlay(grid, placements).valid).toBe(true)
+    expect(CONCEPT_CHECKS['creates-second-line'](grid, placements)).toBe(true)
+  })
+
+  it('wild-in-two-lines: true when a wild at a crossing joins a row line and a column line', () => {
+    // A horizontal neighbor and a vertical neighbor; the wild at (0,0) belongs to both segments.
+    const grid = gridOf([[1, 0, R('red', 'circle', 2)], [0, 1, R('blue', 'triangle', 2)]])
+    const placements = [{ card: WILD, position: { x: 0, y: 0 } }]
+    expect(validatePlay(grid, placements).valid).toBe(true)
+    expect(CONCEPT_CHECKS['wild-in-two-lines'](grid, placements)).toBe(true)
+  })
+
+  // --- negative coverage ---
+
+  it('line-all-same: false for an all-different-on-every-property line', () => {
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const placements = [{ card: R('blue', 'triangle', 2), position: { x: 1, y: 0 } }]
+    expect(CONCEPT_CHECKS['line-all-same'](grid, placements)).toBe(false)
+  })
+
+  it('mixed-properties: false for a line that is not mixed', () => {
+    // "Mixed" means same on >=1 property AND different on >=1. A line that is all-same on
+    // every property is impossible with distinct cards, so the only constructible non-mixed
+    // line is the all-different-on-every-property one (same-count 0) — which must return false.
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const placements = [{ card: R('blue', 'triangle', 2), position: { x: 1, y: 0 } }]
+    expect(CONCEPT_CHECKS['mixed-properties'](grid, placements)).toBe(false)
+  })
+
+  it('spans-both-ends: false when both placements only extend one end', () => {
+    // Existing pair at x=2..3; both placements sit to the left (x=0,1), extending a single end.
+    const grid = gridOf([[2, 0, R('red', 'circle', 3)], [3, 0, R('red', 'circle', 4)]])
+    const placements = [
+      { card: R('red', 'circle', 1), position: { x: 0, y: 0 } },
+      { card: R('red', 'circle', 2), position: { x: 1, y: 0 } },
+    ]
+    expect(validatePlay(grid, placements).valid).toBe(true)
+    expect(CONCEPT_CHECKS['spans-both-ends'](grid, placements)).toBe(false)
   })
 })
 
@@ -123,6 +189,19 @@ describe('solver vs independent oracle (tiny boards)', () => {
   it.each(boards.map((b, i) => [i, b] as const))('board %i: bestPlays max equals oracle', (_i, b) => {
     const solverMax = bestPlays(b.grid, b.hand).reduce((m, p) => Math.max(m, p.total), 0)
     expect(solverMax).toBe(bruteForceBest(b.grid, b.hand))
+  })
+
+  it('perpendicular touch-then-extend: oracle covers a brand-new column off a single anchor', () => {
+    // {(0,0): red-circle-1}, hand all-blue. The best play builds a fresh column at x=1
+    // (which holds no pre-existing occupied cell) touching the board only at (1,0). The
+    // oracle must seed that column via the anchor's touch points, not just occupied cells.
+    const grid = gridOf([[0, 0, R('red', 'circle', 1)]])
+    const hand: Card[] = [R('blue', 'circle', 2), R('blue', 'triangle', 3), R('blue', 'square', 4)]
+    const solverMax = bestPlays(grid, hand).reduce((m, p) => Math.max(m, p.total), 0)
+    const oracleMax = bruteForceBest(grid, hand)
+    expect(solverMax).toBe(14)
+    expect(oracleMax).toBe(14)
+    expect(solverMax).toBe(oracleMax)
   })
 
   it('regression: far-extension lot is found (not lost to a static frontier)', () => {

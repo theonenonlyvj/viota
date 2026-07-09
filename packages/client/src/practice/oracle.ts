@@ -19,13 +19,26 @@ function collinear(cells: Position[]): boolean {
   return cells.every(c => c.y === cells[0].y) || cells.every(c => c.x === cells[0].x)
 }
 
-// Independent candidate cells: every empty cell that shares a row OR column with an occupied
-// cell and is within 4 of that line's occupied span. NO adjacency/frontier heuristic.
+// Independent candidate cells. Two fixed (non-recursive) seed families:
+//   (a) every occupied cell, and
+//   (b) each of the 4 orthogonal neighbors ("touch points") of every occupied cell.
+// From each seed we open a +/-4 row-window and +/-4 col-window (empty cells only).
+// Family (b) is essential: it lets the oracle discover legal perpendicular
+// touch-then-extend plays — a brand-new row/column that meets the board at a single
+// cell, in a row/column that contains no pre-existing occupied card. Windows through
+// occupied cells alone (family (a)) would miss those. This stays a fixed construction —
+// one hop off the board, no frontier/DFS recursion — so the oracle remains an
+// independent check on the solver.
 function candidateCells(grid: Grid): Position[] {
   const occ = [...grid.keys()].map(fromKey)
+  const seeds: Position[] = []
+  for (const p of occ) {
+    seeds.push(p)
+    seeds.push({ x: p.x + 1, y: p.y }, { x: p.x - 1, y: p.y }, { x: p.x, y: p.y + 1 }, { x: p.x, y: p.y - 1 })
+  }
   const rows = new Map<number, number[]>()
   const cols = new Map<number, number[]>()
-  for (const p of occ) {
+  for (const p of seeds) {
     ;(rows.get(p.y) ?? rows.set(p.y, []).get(p.y)!).push(p.x)
     ;(cols.get(p.x) ?? cols.set(p.x, []).get(p.x)!).push(p.y)
   }
