@@ -67,6 +67,9 @@ body { font-family: 'Fredoka', system-ui, sans-serif; }
   display: flex; align-items: center; justify-content: center; padding: 20px; }
 .modal-card { background: #140a1e; border: 1px solid rgba(255,255,255,.12); clip-path: var(--chamfer);
   padding: 28px; max-width: 380px; width: 100%; color: var(--text-body); font-family: 'Fredoka'; }
+/* pill buttons clip their own box with clipPath, which clips away the UA
+   focus outline — give them a clip-surviving focus ring instead. */
+.modal-pill:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--brand-cyan); }
 
 /* hero card float — rotation+scale folded into --t (transform is not additive) */
 @keyframes floaty { 0%,100% { transform: var(--t) translateY(0); } 50% { transform: var(--t) translateY(-12px); } }

@@ -22,3 +22,23 @@ test('returns null when closed', () => {
   const { container } = render(<PlayVsAiModal open={false} onClose={() => {}} />)
   expect(container.firstChild).toBeNull()
 })
+
+test('pressing Escape calls onClose', async () => {
+  const onClose = vi.fn()
+  render(<PlayVsAiModal open onClose={onClose} />)
+  await userEvent.keyboard('{Escape}')
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
+
+test('clicking the close button calls onClose', async () => {
+  const onClose = vi.fn()
+  render(<PlayVsAiModal open onClose={onClose} />)
+  await userEvent.click(screen.getByRole('button', { name: /close/i }))
+  expect(onClose).toHaveBeenCalledTimes(1)
+})
+
+test('opening the modal moves focus into the dialog', () => {
+  render(<PlayVsAiModal open onClose={() => {}} />)
+  const dialog = screen.getByRole('dialog', { name: /play vs ai/i })
+  expect(dialog.contains(document.activeElement)).toBe(true)
+})
