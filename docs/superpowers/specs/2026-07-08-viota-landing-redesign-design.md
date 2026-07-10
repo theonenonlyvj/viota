@@ -295,6 +295,10 @@ the two game routes render outside that wrapper (or a `noFooter` flag).
   imports in code, not `<link>`.)
 - **Deps:** `@fontsource/luckiest-guy`, `@fontsource/fredoka` (import weights 400/500/600/700
   explicitly, or use `@fontsource-variable/fredoka`).
+- **Note (as-shipped):** the implementation kept `index.html`'s `body { overflow: hidden }`/
+  `100dvh` and instead scrolls chrome content via an internal `.chrome-scroll` container in
+  `components/Layout.tsx`, rather than relaxing the global scroll lock as described above — this
+  is the intended approach, not a deviation to fix.
 
 ## 11. Testing
 

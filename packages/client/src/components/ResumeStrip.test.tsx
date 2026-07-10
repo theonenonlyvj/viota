@@ -36,6 +36,16 @@ test('shows an online row and routes on click', async () => {
   expect(navigate).toHaveBeenCalledWith('/game/online')
 })
 
+test('shows a waiting online row and routes to the lobby on click', async () => {
+  ;(myGames as any).mockResolvedValue([
+    { gameId: 'g9', code: 'WAIT99', status: 'waiting', playerCount: 2, seatIndex: 0, lastActivityAt: Date.now() },
+  ])
+  renderStrip()
+  const row = await screen.findByText(/WAIT99/)
+  row.closest('.resume-row')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+  expect(navigate).toHaveBeenCalledWith('/lobby/WAIT99')
+})
+
 test('shows a local row when the hook returns a game', async () => {
   ;(myGames as any).mockResolvedValue([])
   ;(useLocalResumableGame as any).mockReturnValue({ lastActivityAt: Date.now() })
