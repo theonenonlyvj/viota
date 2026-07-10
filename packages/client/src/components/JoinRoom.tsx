@@ -27,7 +27,11 @@ export default function JoinRoom({ code, onJoined }: { code: string; onJoined: (
     try {
       const joined = await joinOnlineGame(SERVER_URL, { code, displayName: name.trim() })
       saveSession({ gameId: joined.gameId, code: joined.code, mySeat: joined.mySeat, players: joined.players })
-      onJoined()
+      // Fix #3's idempotent resume: I already own a seat in a STARTED game —
+      // go straight into it (mirrors Room.tsx's /my-games auto-resolve path)
+      // instead of signaling onJoined, which would swap in the waiting room.
+      if (joined.resumed) navigate('/game/online')
+      else onJoined()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to join room')
     } finally {

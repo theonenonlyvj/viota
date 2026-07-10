@@ -16,6 +16,15 @@ export type CreatedGame = {
   code: string
   mySeat: number
   players: string[]
+  /**
+   * True when this call landed in an ALREADY-active game the caller owns a
+   * seat in (the server's idempotent-resume path: POST /join returns
+   * `{ seatIndex, status, room: null }` for a seat-holder rejoining a
+   * started game — there's no waiting-room roster to hand back). Callers
+   * should route straight into the live game instead of a waiting room.
+   * Absent/false on a normal create or waiting-room join.
+   */
+  resumed?: boolean
 }
 
 export type RoomSeat = { seatIndex: number; ownerType: string; displayName: string | null }
@@ -42,6 +51,18 @@ function seatLabel(s: RoomSeat): string {
   if (s.ownerType === 'open') return 'Open'
   if (s.ownerType === 'ai') return 'AI'
   return 'Player'
+}
+
+/**
+ * First-paint placeholder roster for a game resumed mid-play, before the
+ * server-authoritative sync roster arrives. `OnlineGame.tsx` always prefers
+ * the live server roster once its first sync lands, so this only needs to
+ * be good enough for the brief window before that — not exact. Shared by
+ * every "silently resume an in-progress game" path (join-into-active,
+ * Room.tsx's /my-games auto-resolve, ResumeStrip).
+ */
+export function placeholderPlayers(playerCount: number, mySeat: number, myName: string): string[] {
+  return Array.from({ length: playerCount }, (_, i) => (i === mySeat ? myName : `Player ${i + 1}`))
 }
 
 /**
@@ -127,7 +148,25 @@ export async function joinOnlineGame(
   }
   const { seatIndex, room } = (await jr.json()) as {
     seatIndex: number
-    room: { code: string | null; seats: RoomSeat[] }
+    room: { code: string | null; seats: RoomSeat[] } | null
+  }
+
+  if (room === null) {
+    // Idempotent resume (Fix #3): I already own a seat in this game and it's
+    // no longer 'waiting', so the server has no waiting-room roster to hand
+    // back. Resolve a first-paint placeholder via /my-games (durable +
+    // server-authoritative) instead of dereferencing a null room, and flag
+    // `resumed` so the caller navigates straight into the live game.
+    const games = await myGames(serverUrl)
+    const mine = games.find((g) => g.gameId === gameId)
+    const playerCount = mine?.playerCount ?? seatIndex + 1
+    return {
+      gameId,
+      code: mine?.code ?? code,
+      mySeat: seatIndex,
+      players: placeholderPlayers(playerCount, seatIndex, opts.displayName),
+      resumed: true,
+    }
   }
 
   return { gameId, code: room.code ?? code, mySeat: seatIndex, players: room.seats.map(seatLabel) }

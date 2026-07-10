@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { serverUrl } from '../net/config'
 import { getDisplayName } from '../net/identity'
-import { myGames } from '../net/lobby'
+import { myGames, placeholderPlayers } from '../net/lobby'
 import { loadSession, saveSession } from '../net/session'
 import WaitingRoom from './WaitingRoom'
 import JoinRoom from '../components/JoinRoom'
@@ -38,8 +38,7 @@ export default function Room() {
       if (!active) return
       const mine = games.find((g) => (g.code ?? '').toUpperCase() === code.toUpperCase())
       if (!mine) return
-      const players = Array.from({ length: mine.playerCount }, (_, i) =>
-        i === mine.seatIndex ? getDisplayName() : `Player ${i + 1}`)
+      const players = placeholderPlayers(mine.playerCount, mine.seatIndex, getDisplayName())
       saveSession({ gameId: mine.gameId, code: mine.code ?? code, mySeat: mine.seatIndex, players })
       if (mine.status === 'waiting') forceRecheck((n) => n + 1) // re-render -> inThisRoom -> WaitingRoom
       else navigate('/game/online')

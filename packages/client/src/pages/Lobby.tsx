@@ -50,7 +50,9 @@ export default function Lobby() {
     try {
       const joined = await joinOnlineGame(SERVER_URL, { code: roomCode.trim().toUpperCase(), displayName: name.trim() })
       saveSession({ gameId: joined.gameId, code: joined.code, mySeat: joined.mySeat, players: joined.players })
-      navigate(`/lobby/${joined.code}`)
+      // Fix #3's idempotent resume: I already own a seat in a STARTED game —
+      // go straight into it, there's no waiting room to show.
+      navigate(joined.resumed ? '/game/online' : `/lobby/${joined.code}`)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to join room')
     } finally {

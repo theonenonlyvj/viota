@@ -100,6 +100,20 @@ test('Join Room joins by code and navigates to the waiting room', async () => {
   expect(sessionStorage.getItem('viota_online_session')).toContain('g7')
 })
 
+test('joining an already-active game (resumed) routes into the game, not the waiting room', async () => {
+  // Fix #3: rejoining a seat you already own in a STARTED game returns
+  // `resumed: true` (no waiting-room roster). This must NOT crash and must
+  // NOT land on /lobby/:code (there's no waiting room to show).
+  joinOnlineGame.mockResolvedValue({ gameId: 'g7', code: 'ABCDEF', mySeat: 1, players: ['Player 1', 'Bob'], resumed: true })
+  render(<MemoryRouter><Lobby /></MemoryRouter>)
+  await userEvent.type(screen.getByPlaceholderText('Your name'), 'Bob')
+  await userEvent.type(screen.getByPlaceholderText('Room code'), 'ABCDEF')
+  await userEvent.click(screen.getByText('Join Room'))
+  await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('/game/online'))
+  expect(mockNavigate).not.toHaveBeenCalledWith('/lobby/ABCDEF')
+  expect(sessionStorage.getItem('viota_online_session')).toContain('g7')
+})
+
 test('a join failure surfaces the error message', async () => {
   joinOnlineGame.mockRejectedValue(new Error('No open game found for code ZZZZZZ'))
   render(<MemoryRouter><Lobby /></MemoryRouter>)

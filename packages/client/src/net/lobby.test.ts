@@ -90,6 +90,52 @@ test('joinOnlineGame quick-auths, resolves the code, joins, and returns the seat
   expect(fetchMock.mock.calls[2]![0]).toBe('http://sv/games/game-7/join')
 })
 
+test('joinOnlineGame resumes into an already-active game (room: null) without throwing', async () => {
+  // Fix #3: an account that already owns a seat in a STARTED game gets
+  // { seatIndex, status:'active', room:null } back from /join (idempotent
+  // resume) instead of the waiting-room roster. joinOnlineGame must not
+  // blow up dereferencing `room` — it resolves a placeholder roster via
+  // /my-games and flags `resumed: true` so the caller routes straight into
+  // the live game instead of a waiting room that no longer exists.
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(okJson({ token: 'jwt-1', accountId: 'acc-1' })) // /auth/quick
+    .mockResolvedValueOnce(okJson({ gameId: 'game-7' })) // /games/resolve
+    .mockResolvedValueOnce(okJson({ seatIndex: 1, status: 'active', room: null })) // /join
+    .mockResolvedValueOnce(okJson({ // /my-games
+      games: [{ game_uuid: 'game-7', code: 'ABCDEF', status: 'active', player_count: 3, last_activity_at: 1, seat_index: 1 }],
+    }))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const joined = await joinOnlineGame('http://sv', { code: 'abcdef', displayName: 'Bob' })
+
+  expect(joined).toEqual({
+    gameId: 'game-7',
+    code: 'ABCDEF',
+    mySeat: 1,
+    players: ['Player 1', 'Bob', 'Player 3'],
+    resumed: true,
+  })
+})
+
+test('joinOnlineGame resume falls back gracefully when /my-games has no matching row', async () => {
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(okJson({ token: 'jwt-1', accountId: 'acc-1' }))
+    .mockResolvedValueOnce(okJson({ gameId: 'game-7' }))
+    .mockResolvedValueOnce(okJson({ seatIndex: 2, status: 'active', room: null }))
+    .mockResolvedValueOnce(okJson({ games: [] })) // /my-games — race, nothing found yet
+  vi.stubGlobal('fetch', fetchMock)
+
+  const joined = await joinOnlineGame('http://sv', { code: 'abcdef', displayName: 'Bob' })
+
+  expect(joined.resumed).toBe(true)
+  expect(joined.gameId).toBe('game-7')
+  expect(joined.mySeat).toBe(2)
+  expect(joined.code).toBe('ABCDEF') // falls back to the caller-provided code
+  expect(joined.players[2]).toBe('Bob') // at least my own seat is right
+})
+
 test('joinOnlineGame throws a friendly error on an unknown code (404)', async () => {
   vi.stubGlobal(
     'fetch',
