@@ -14,11 +14,11 @@ function mintCredential(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function authQuick(deviceCredential: string, displayName: string): Promise<Response> {
+async function authQuick(deviceCredential: string, displayName: string, game?: string): Promise<Response> {
   return SELF.fetch('https://example.com/auth/quick', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceCredential, displayName }),
+    body: JSON.stringify(game === undefined ? { deviceCredential, displayName } : { deviceCredential, displayName, game }),
   })
 }
 
@@ -69,6 +69,51 @@ describe('POST /auth/quick', () => {
   it('rejects an empty/invalid credential (400)', async () => {
     expect((await authQuick('', 'Nobody')).status).toBe(400)
     expect((await authQuick('short', 'Nobody')).status).toBe(400)
+  })
+
+  it('mints origin_game from an optional, allowlisted `game` field (Fix M3)', async () => {
+    const { accountId } = (await (await authQuick(mintCredential(), 'JaipurGhost', 'jaipur')).json()) as {
+      accountId: string
+    }
+    const row = await DB()
+      .prepare('SELECT origin_game FROM accounts WHERE id = ?')
+      .bind(accountId)
+      .first<{ origin_game: string }>()
+    expect(row?.origin_game).toBe('jaipur')
+  })
+
+  it('defaults origin_game to "iota" when `game` is absent (existing viota clients) or unrecognized', async () => {
+    const { accountId: noneId } = (await (await authQuick(mintCredential(), 'NoGame')).json()) as {
+      accountId: string
+    }
+    const noneRow = await DB()
+      .prepare('SELECT origin_game FROM accounts WHERE id = ?')
+      .bind(noneId)
+      .first<{ origin_game: string }>()
+    expect(noneRow?.origin_game).toBe('iota')
+
+    const { accountId: bogusId } = (await (await authQuick(mintCredential(), 'BogusGame', 'not-a-real-game')).json()) as {
+      accountId: string
+    }
+    const bogusRow = await DB()
+      .prepare('SELECT origin_game FROM accounts WHERE id = ?')
+      .bind(bogusId)
+      .first<{ origin_game: string }>()
+    expect(bogusRow?.origin_game).toBe('iota')
+  })
+
+  it('never overwrites an EXISTING account\'s origin_game on re-auth (game is CREATE-only)', async () => {
+    const cred = mintCredential()
+    const { accountId: a } = (await (await authQuick(cred, 'First', 'jaipur')).json()) as { accountId: string }
+    // Same credential re-authenticates the same account; a later/different
+    // `game` on re-auth must NOT relabel it.
+    const { accountId: b } = (await (await authQuick(cred, 'First', 'iota')).json()) as { accountId: string }
+    expect(b).toBe(a)
+    const row = await DB()
+      .prepare('SELECT origin_game FROM accounts WHERE id = ?')
+      .bind(a)
+      .first<{ origin_game: string }>()
+    expect(row?.origin_game).toBe('jaipur')
   })
 
   it('NEVER stores the raw credential — only its SHA-256 hash', async () => {

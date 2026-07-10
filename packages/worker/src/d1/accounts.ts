@@ -44,6 +44,16 @@ export function sanitizeDisplayName(raw: unknown): string {
   return [...s].slice(0, 24).join('')
 }
 
+/** Games allowed to stamp `origin_game` on a NEWLY-minted account via
+ *  `/auth/quick`. Purely additive/cosmetic (analytics only — never consulted
+ *  by auth or leaderboards): an unrecognized or absent value falls back to
+ *  the long-standing default, 'iota'. */
+const ORIGIN_GAMES = ['iota', 'jaipur'] as const
+export type OriginGame = (typeof ORIGIN_GAMES)[number]
+export function isValidOriginGame(v: unknown): v is OriginGame {
+  return typeof v === 'string' && (ORIGIN_GAMES as readonly string[]).includes(v)
+}
+
 export type QuickAccountResult = { accountId: string; isNew: boolean }
 
 /**
@@ -72,6 +82,10 @@ export async function quickAccount(
     country?: string | null
     region?: string | null
     timezone?: string | null
+    /** Which game's client is minting this account; stored ONLY on the mint
+     *  INSERT (never overwrites an existing account's origin_game). Defaults
+     *  to 'iota' when absent — see isValidOriginGame. */
+    originGame?: OriginGame
   },
 ): Promise<QuickAccountResult> {
   const byDevice = await findAccountByDevice(db, params.credentialHash)
@@ -94,7 +108,7 @@ export async function quickAccount(
   await db
     .prepare(
       `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, country, region, timezone, status, origin_game, last_seen_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'ghost', 'iota', ?)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'ghost', ?, ?)
        ON CONFLICT(credential_hash) DO NOTHING`,
     )
     .bind(
@@ -105,6 +119,7 @@ export async function quickAccount(
       params.country ?? null,
       params.region ?? null,
       params.timezone ?? null,
+      params.originGame ?? 'iota',
       params.now,
     )
     .run()
@@ -137,7 +152,7 @@ export async function handleAuthQuick(
 ): Promise<Response> {
   if (!env.JWT_SECRET) return json({ error: 'service_unavailable' }, 503)
 
-  let body: { deviceCredential?: unknown; displayName?: unknown }
+  let body: { deviceCredential?: unknown; displayName?: unknown; game?: unknown }
   try {
     body = (await request.json()) as typeof body
   } catch {
@@ -149,6 +164,10 @@ export async function handleAuthQuick(
   }
   const displayName = sanitizeDisplayName(body.displayName)
   if (displayName.length === 0) return json({ error: 'invalid_display_name' }, 400)
+  // Optional, additive: which game's client is calling. Absent/unrecognized
+  // falls back to the long-standing default ('iota') — existing viota
+  // clients send no `game` and are unaffected.
+  const originGame: OriginGame = isValidOriginGame(body.game) ? body.game : 'iota'
 
   const credentialHash = await hashCredential(body.deviceCredential)
   // Coarse IP-derived geo from Cloudflare's request.cf — no GPS, no permission
@@ -163,6 +182,7 @@ export async function handleAuthQuick(
     country: geo(cf?.country),
     region: geo(cf?.region),
     timezone: geo(cf?.timezone),
+    originGame,
   })
   const token = await signToken(accountId, env.JWT_SECRET)
   return json({ token, accountId })
