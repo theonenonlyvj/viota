@@ -2,6 +2,7 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
+import { handleSetCredentials } from './identity/routes'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
@@ -52,6 +53,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     // POST /auth/quick -> mint-or-authenticate a quick account (D1 accounts).
     if (request.method === 'POST' && path === '/auth/quick') {
       return handleAuthQuick(request, env)
+    }
+
+    // POST /auth/set-credentials -> VGames identity: claim username+password
+    // onto the caller's current ghost account, in place (Bearer-authed).
+    if (request.method === 'POST' && path === '/auth/set-credentials') {
+      return handleSetCredentials(request, env)
     }
 
     // POST /claim -> claim device ghost games into the authed account.
