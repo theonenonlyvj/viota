@@ -79,10 +79,15 @@ const DUMMY_PHC = 'pbkdf2-sha256$i=600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAA
 /**
  * `POST /auth/login { username, password, deviceCredential }` — anti-
  * enumeration username/password login. Unknown user AND known-user-wrong-
- * password return the IDENTICAL `401 invalid_credentials` body; a dummy PHC is
- * verified against on an unknown username so both paths pay the same PBKDF2
- * cost. Never hard-denies (no permanent lockout) — repeated failures instead
- * accrue a bounded latency delay. On success: binds `deviceCredential` as a
+ * password return the IDENTICAL `401 invalid_credentials` body with NO
+ * differential delay; a dummy PHC is verified against on an unknown username
+ * so both paths pay the same PBKDF2 cost (the sole, existence-independent,
+ * timing equalizer). `login_fail_count` is incremented on failure for future
+ * analytics/lockout only — it MUST NOT drive response timing, since it only
+ * exists/grows for a real username and would otherwise leak existence via a
+ * growing-vs-flat delay pattern. Never hard-denies (no permanent lockout);
+ * per-IP throttling / WAF is the deferred real brute-force control. On
+ * success: binds `deviceCredential` as a
  * new device row (this is a NEW device authenticating via password, not the
  * device that originally minted the ghost), lazily rehashes the password hash
  * if it's below the target iteration count, resets the fail counter, and
@@ -122,12 +127,17 @@ export async function handleLogin(request: Request, env: IdentityEnv & { JWT_SEC
 
   if (!acc || !ok || acc.status === 'merged' || !acc.password_hash) {
     if (acc) {
+      // Incremented for future analytics/lockout tooling only — MUST NOT
+      // drive response timing (see below): `login_fail_count` only exists/
+      // grows for a REAL username, so branching latency on it would let an
+      // attacker distinguish "unknown user" (always 0) from "known user,
+      // wrong password" (growing) purely by observing the delay pattern.
       await env.DB.prepare(`UPDATE accounts SET login_fail_count=login_fail_count+1 WHERE id=?`).bind(acc.id).run()
     }
-    // Bounded latency throttle (never a hard deny): scales with recent fails,
-    // capped, so a fail storm slows brute force without ever locking anyone out.
-    const fails = acc?.login_fail_count ?? 0
-    await new Promise((resolve) => setTimeout(resolve, Math.min(fails * 100, 1500)))
+    // No account-state-dependent delay here, by design: the constant-time
+    // PBKDF2 verify above (real hash on a known user, DUMMY_PHC on an unknown
+    // one) is the sole timing equalizer between the two failure paths. Per-IP
+    // throttling / WAF is the deferred real brute-force control.
     return json({ error: 'invalid_credentials' }, 401)
   }
 

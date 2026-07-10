@@ -47,6 +47,32 @@ describe('/auth/login', () => {
     expect((await r.json()) as { error: string }).toMatchObject({ error: 'invalid_credentials' })
   })
 
+  it('does not scale failure latency with login_fail_count (no existence-correlated delay)', async () => {
+    // A REAL (existing) username, driven through several failed attempts so
+    // login_fail_count climbs — under the old bug this scaled a setTimeout
+    // delay (fails*100ms, capped 1500ms). An unknown username's fail count
+    // never exists/grows, so it always got 0ms extra delay: the growing-vs-flat
+    // pattern was an existence oracle. There must be no such branch anymore —
+    // a known user with a high fail count and an unknown user must take
+    // comparably bounded time on the SAME failing request.
+    for (let i = 0; i < 5; i++) {
+      await q('/auth/login', { username: 'logger', password: 'still-wrong-' + i, deviceCredential: 'd-timing-fail-' + i })
+    }
+    const t0 = Date.now()
+    await q('/auth/login', { username: 'logger', password: 'still-wrong-final', deviceCredential: 'd-timing-fail-final' })
+    const knownElapsedMs = Date.now() - t0
+
+    const t1 = Date.now()
+    await q('/auth/login', { username: 'never-existed-timing-user', password: 'whatever', deviceCredential: 'd-timing-unknown' })
+    const unknownElapsedMs = Date.now() - t1
+
+    // No account-state-dependent delay branch remains: the gap between a
+    // fail-heavy known user and a fresh unknown user must stay small (PBKDF2
+    // cost is the only shared, existence-independent latency floor). Under
+    // the old bug this gap was >= 500ms (5 prior fails * 100ms).
+    expect(Math.abs(knownElapsedMs - unknownElapsedMs)).toBeLessThan(300)
+  })
+
   it('mints a token that verifies via requireCanonicalAccount (vgames token, not legacy)', async () => {
     const r = await q('/auth/login', { username: 'logger', password: 'hunter2', deviceCredential: 'cred-verify-device-1' })
     const { token, accountId } = (await r.json()) as { token: string; accountId: string }
