@@ -7,10 +7,11 @@ import worker from '../src/index'
 const ADMIN_SECRET = 'admin-secret-0123456789-abcdefghijklmnop'
 const DB = () => (env as unknown as { DB: D1Database }).DB
 
-async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin'): Promise<string> {
+async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgames'): Promise<string> {
   return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject('vijay')
+    .setIssuer(iss)
     .setAudience(aud)
     .setIssuedAt()
     .setExpirationTime('10m')
@@ -65,6 +66,11 @@ describe('/admin/merge', () => {
   it('401s a token with the wrong audience', async () => {
     const wrongAud = await adminTok(ADMIN_SECRET, 'vgames-web')
     expect((await merge(wrongAud, { fromAccountId: 'a', intoAccountId: 'b', dryRun: true })).status).toBe(401)
+  })
+
+  it('401s a token with the wrong issuer', async () => {
+    const wrongIss = await adminTok(ADMIN_SECRET, 'vgames-admin', 'vgames-web')
+    expect((await merge(wrongIss, { fromAccountId: 'a', intoAccountId: 'b', dryRun: true })).status).toBe(401)
   })
 
   it('dry-run returns counts under a valid admin token, without writing', async () => {
