@@ -74,7 +74,7 @@ type LoginAccountRow = {
 // dominant timing signal — is paid on both the "no such user" and "wrong
 // password" paths. Never matches a real derived key (a and b differ in
 // length after unb64, so `timingSafeEqual` short-circuits `false`).
-const DUMMY_PHC = 'pbkdf2-sha256$i=600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
+const DUMMY_PHC = 'pbkdf2-sha256$i=100000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA='
 
 /**
  * `POST /auth/login { username, password, deviceCredential }` — anti-
