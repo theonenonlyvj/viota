@@ -55,6 +55,21 @@ test('applyOnlineView ignores a stale (lower) moveIndex', () => {
   expect(store().moveIndex).toBe(5)
 })
 
+test('applyOnlineView derives player display names from the server roster (seat order)', () => {
+  store().applyOnlineView(view({
+    players: [
+      { seat: 0, displayName: 'Vijay', ownerType: 'human' },
+      { seat: 1, displayName: 'AI 2', ownerType: 'ai' },
+    ],
+  }), 5)
+  expect(store().players).toEqual(['Vijay', 'AI 2'])
+})
+
+test('applyOnlineView leaves players empty when the view carries no roster (caller falls back)', () => {
+  store().applyOnlineView(view(), 5) // the view() fixture omits `players`
+  expect(store().players).toEqual([])
+})
+
 test('applyOnlineView sets phase ai-thinking when it is not my turn', () => {
   store().applyOnlineView(view({ turnIndex: 1 }), 2)
   expect(store().phase).toBe('ai-thinking')

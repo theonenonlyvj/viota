@@ -79,6 +79,22 @@ test('shows player names from the session', () => {
   expect(screen.getByText('Bob')).toBeInTheDocument()
 })
 
+test('shows the server-authoritative roster, overriding a stale "Open/Open" session snapshot', () => {
+  // The host's session was seeded with placeholders at room creation and never
+  // refreshed (the bug) — the first real server view must win over it.
+  saveSession({ gameId: 'g1', code: 'ABCDEF', mySeat: 0, players: ['Open', 'Open'] })
+  render(<MemoryRouter><OnlineGame /></MemoryRouter>)
+  act(() => useGameStore.getState().applyOnlineView(view({
+    players: [
+      { seat: 0, displayName: 'Vijay', ownerType: 'human' },
+      { seat: 1, displayName: 'Sam', ownerType: 'human' },
+    ],
+  }), 1))
+  expect(screen.getByText('Vijay')).toBeInTheDocument()
+  expect(screen.getByText('Sam')).toBeInTheDocument()
+  expect(screen.queryByText('Open')).not.toBeInTheDocument()
+})
+
 test('a reclaim offer renders a Reclaim button', () => {
   render(<MemoryRouter><OnlineGame /></MemoryRouter>)
   act(() => { useGameStore.getState().applyOnlineView(view({ turnIndex: 1 }), 1); useGameStore.getState().handleAiCover(0) })

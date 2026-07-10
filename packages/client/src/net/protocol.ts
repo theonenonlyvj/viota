@@ -8,6 +8,9 @@ import type { Card, Placement, Position, RegularCard } from '@viota/engine'
  * Source of truth: packages/worker/src/do/{view,client-move,moves}.ts.
  */
 
+/** A seat's public roster entry (names are public within a game). */
+export type ClientPlayer = { seat: number; displayName: string; ownerType: string }
+
 /** The per-seat redacted board view — the ONLY board shape a client receives. */
 export type ClientView = {
   grid: [string, Card][]
@@ -20,6 +23,9 @@ export type ClientView = {
   playedCards: RegularCard[]
   consecutivePasses: number
   finished: boolean
+  /** Live server-authoritative seat roster — refreshes every sync, unlike the
+   *  one-time sessionStorage snapshot it replaces. */
+  players: ClientPlayer[]
 }
 
 /** A redacted move-log row (pass trades collapse to a count; plays are public). */

@@ -80,6 +80,36 @@ it('each seat sees only its OWN hand (seat resolved from the token account)', as
   expect('hands' in s1.snapshot).toBe(false)
 })
 
+it('GET /sync carries a live server-authoritative name roster on the ACTIVE view (fix: no more Open/Open or Player N)', async () => {
+  // Two real humans (host 'a0'=P0, joiner 'a1'=P1) + one AI-filled open seat.
+  const gameId = await createActiveGame(['a0', 'a1'], 3)
+
+  const res = await sync(gameId, 'a0')
+  expect(res.status).toBe(200)
+  const body = (await res.json()) as any
+  const players = body.snapshot.players
+
+  expect(players).toEqual([
+    { seat: 0, displayName: 'P0', ownerType: 'human' },
+    { seat: 1, displayName: 'P1', ownerType: 'human' },
+    { seat: 2, displayName: 'AI 3', ownerType: 'ai' },
+  ])
+  // Never the stale client-seeded placeholders this roster replaces.
+  const raw = await (await sync(gameId, 'a0')).text()
+  expect(raw).not.toContain('"Open"')
+})
+
+it('GET /sync roster refreshes across seats (each account sees the SAME live names, not its own guess)', async () => {
+  const gameId = await createActiveGame(['a0', 'a1'])
+  const s0 = (await (await sync(gameId, 'a0')).json()) as any
+  const s1 = (await (await sync(gameId, 'a1')).json()) as any
+  expect(s0.snapshot.players).toEqual(s1.snapshot.players)
+  expect(s0.snapshot.players).toEqual([
+    { seat: 0, displayName: 'P0', ownerType: 'human' },
+    { seat: 1, displayName: 'P1', ownerType: 'human' },
+  ])
+})
+
 it('rejects an unauthenticated sync (401) and a sync from an account with no seat (403)', async () => {
   const gameId = await createGame()
   // no token
