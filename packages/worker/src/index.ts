@@ -2,7 +2,7 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
-import { handleSetCredentials } from './identity/routes'
+import { handleSetCredentials, handleLogin } from './identity/routes'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
@@ -59,6 +59,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     // onto the caller's current ghost account, in place (Bearer-authed).
     if (request.method === 'POST' && path === '/auth/set-credentials') {
       return handleSetCredentials(request, env)
+    }
+
+    // POST /auth/login -> VGames identity: username+password login, binds the
+    // presenting device, mints a fresh vgames token.
+    if (request.method === 'POST' && path === '/auth/login') {
+      return handleLogin(request, env)
     }
 
     // POST /claim -> claim device ghost games into the authed account.
