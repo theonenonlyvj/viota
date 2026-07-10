@@ -36,3 +36,19 @@ test('opening moves focus into the card (or a focusable descendant)', () => {
   const card = screen.getByTestId('card')
   expect(card.contains(document.activeElement)).toBe(true)
 })
+
+test('closing restores focus to the trigger that was focused before opening', () => {
+  const trigger = document.createElement('button')
+  document.body.appendChild(trigger)
+  trigger.focus()
+
+  const onClose = vi.fn()
+  const { rerender } = render(<Harness open={false} onClose={onClose} />)
+  rerender(<Harness open onClose={onClose} />)
+  expect(screen.getByTestId('card').contains(document.activeElement)).toBe(true)
+
+  rerender(<Harness open={false} onClose={onClose} />)
+  expect(document.activeElement).toBe(trigger)
+
+  document.body.removeChild(trigger)
+})

@@ -5,6 +5,7 @@ import { createOnlineRoom, joinOnlineGame } from '../net/lobby'
 import { claimGhostGames } from '../net/ghost'
 import { saveSession } from '../net/session'
 import Button from '../components/Button'
+import PillButton from '../components/PillButton'
 import ResumeStrip from '../components/ResumeStrip'
 
 const SERVER_URL = serverUrl()
@@ -17,13 +18,6 @@ const AI_TAKEOVER_OPTIONS: { label: string; value: number }[] = [
   { label: '5 min', value: 300000 },
   { label: 'Wait for me', value: 0 },
 ]
-
-const pill = (active: boolean): React.CSSProperties => ({
-  background: active ? 'rgba(34,211,238,.18)' : 'rgba(255,255,255,.06)',
-  border: active ? '1.5px solid var(--brand-cyan)' : '1.5px solid rgba(255,255,255,.2)',
-  color: '#fff', clipPath: 'var(--chamfer)', padding: '8px 16px', cursor: 'pointer',
-  fontFamily: 'Fredoka', fontWeight: 500, fontSize: 14,
-})
 
 export default function Lobby() {
   const [name, setName] = useState('')
@@ -70,7 +64,7 @@ export default function Lobby() {
         vi<span style={{ color: 'var(--brand-cyan)' }}>o</span>ta
       </h1>
 
-      <input className="field" style={{ maxWidth: 360 }} placeholder="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
+      <input className="field" style={{ maxWidth: 360 }} placeholder="Your name" aria-label="Your name" value={name} onChange={e => setName(e.target.value)} maxLength={24} />
       {error && <p style={{ color: 'var(--text-error)', fontSize: 13, maxWidth: 340, textAlign: 'center' }}>{error}</p>}
 
       <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: 780 }}>
@@ -80,13 +74,13 @@ export default function Lobby() {
           <p className="panel__sublabel" style={{ marginTop: 0 }}>Players</p>
           <div style={{ display: 'flex', gap: 8 }}>
             {[2, 3, 4].map(n => (
-              <button key={n} className="modal-pill" aria-pressed={players === n} style={pill(players === n)} onClick={() => setPlayers(n)}>{n}</button>
+              <PillButton key={n} active={players === n} onClick={() => setPlayers(n)}>{n}</PillButton>
             ))}
           </div>
           <p className="panel__sublabel">If someone drops, AI covers after</p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {AI_TAKEOVER_OPTIONS.map(o => (
-              <button key={o.value} className="modal-pill" aria-pressed={aiTakeoverMs === o.value} style={pill(aiTakeoverMs === o.value)} onClick={() => setAiTakeoverMs(o.value)}>{o.label}</button>
+              <PillButton key={o.value} active={aiTakeoverMs === o.value} onClick={() => setAiTakeoverMs(o.value)}>{o.label}</PillButton>
             ))}
           </div>
           <div style={{ marginTop: 22 }}>
@@ -97,7 +91,7 @@ export default function Lobby() {
         {/* JOIN */}
         <div className="panel" style={{ flex: '1 1 240px', maxWidth: 380, display: 'flex', flexDirection: 'column' }}>
           <p className="panel__label">Join a room</p>
-          <input className="field" style={{ textTransform: 'uppercase', textAlign: 'center', letterSpacing: 6, fontSize: 16, marginBottom: 16 }} placeholder="Room code" value={roomCode} onChange={e => setRoomCode(e.target.value)} maxLength={8} />
+          <input className="field" style={{ textTransform: 'uppercase', textAlign: 'center', letterSpacing: 6, fontSize: 16, marginBottom: 16 }} placeholder="Room code" aria-label="Room code" value={roomCode} onChange={e => setRoomCode(e.target.value)} maxLength={8} />
           <Button variant="secondary" disabled={busy} onClick={handleJoin}>Join Room</Button>
         </div>
       </div>

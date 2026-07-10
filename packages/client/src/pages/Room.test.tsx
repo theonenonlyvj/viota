@@ -31,6 +31,12 @@ test('shows the join card (with the code) when there is no session', () => {
   expect(screen.getByText(/join ABC123/i)).toBeInTheDocument()
 })
 
+test('shows the waiting room when the stored session code differs only in case from the URL', () => {
+  loadSession.mockReturnValue({ gameId: 'g1', code: 'abc123', mySeat: 0, players: ['me'] })
+  at('/lobby/ABC123')
+  expect(screen.getByText('waiting-room')).toBeInTheDocument()
+})
+
 test('shows the join card when the session is for a different room', () => {
   loadSession.mockReturnValue({ gameId: 'g2', code: 'ZZZ999', mySeat: 0, players: ['me'] })
   at('/lobby/ABC123')

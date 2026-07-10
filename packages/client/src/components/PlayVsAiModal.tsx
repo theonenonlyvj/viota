@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useGameStore } from '../store/gameStore'
 import { useModalDismiss } from '../hooks/useModalDismiss'
 import Button from './Button'
+import PillButton from './PillButton'
 
 type Difficulty = 'easy' | 'expert'
 
@@ -14,13 +15,6 @@ export default function PlayVsAiModal({ open, onClose }: { open: boolean; onClos
   const cardRef = useRef<HTMLDivElement>(null)
   useModalDismiss(open, onClose, cardRef)
   if (!open) return null
-
-  const pill = (active: boolean): React.CSSProperties => ({
-    background: active ? 'rgba(34,211,238,.18)' : 'rgba(255,255,255,.06)',
-    border: active ? '1.5px solid var(--brand-cyan)' : '1.5px solid rgba(255,255,255,.2)',
-    color: '#fff', clipPath: 'var(--chamfer)', padding: '8px 16px', cursor: 'pointer',
-    fontFamily: 'Fredoka', fontWeight: 500, fontSize: 14,
-  })
 
   function start() {
     startGame(opponents + 1, difficulty)
@@ -45,13 +39,13 @@ export default function PlayVsAiModal({ open, onClose }: { open: boolean; onClos
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>AI opponents</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
           {[1, 2, 3].map((n) => (
-            <button type="button" key={n} className="modal-pill" style={pill(opponents === n)} onClick={() => setOpponents(n)}>{n}</button>
+            <PillButton key={n} active={opponents === n} onClick={() => setOpponents(n)}>{n}</PillButton>
           ))}
         </div>
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 8 }}>Difficulty</p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
-          <button type="button" className="modal-pill" style={pill(difficulty === 'easy')} onClick={() => setDifficulty('easy')}>RickBot · not optimizing for points</button>
-          <button type="button" className="modal-pill" style={pill(difficulty === 'expert')} onClick={() => setDifficulty('expert')}>Expert</button>
+          <PillButton active={difficulty === 'easy'} onClick={() => setDifficulty('easy')}>RickBot · not optimizing for points</PillButton>
+          <PillButton active={difficulty === 'expert'} onClick={() => setDifficulty('expert')}>Expert</PillButton>
         </div>
         <Button variant="primary" onClick={start}>Start game</Button>
       </div>

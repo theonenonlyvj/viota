@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useLayoutEffect } from 'react'
 
 const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
 
@@ -9,13 +9,15 @@ function getFocusables(card: HTMLElement): HTMLElement[] {
 /**
  * Shared modal a11y behavior (spec §4/§8): Escape dismiss + a simple focus
  * trap. On open, focus moves into the card (or its first focusable
- * descendant); Tab/Shift+Tab wrap within the card's focusable elements.
- * No-ops entirely when `open` is false.
+ * descendant); Tab/Shift+Tab wrap within the card's focusable elements. On
+ * close/unmount, focus is restored to whatever element triggered the modal
+ * (if it's still in the document). No-ops entirely when `open` is false.
  */
 export function useModalDismiss(open: boolean, onClose: () => void, cardRef: React.RefObject<HTMLElement>): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!open) return
 
+    const trigger = document.activeElement as HTMLElement | null
     const card = cardRef.current
     const focusables = card ? getFocusables(card) : []
     ;(focusables[0] ?? card)?.focus()
@@ -43,7 +45,10 @@ export function useModalDismiss(open: boolean, onClose: () => void, cardRef: Rea
     }
 
     document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown)
+      if (trigger && trigger.isConnected) trigger.focus()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, onClose])
 }
