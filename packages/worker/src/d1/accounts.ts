@@ -1,4 +1,5 @@
 import { signToken } from '../jwt'
+import { findAccountByDevice, upsertDevice } from './devices'
 
 /**
  * Quick-account identity over the D1 `accounts` store (must-fix #12).
@@ -46,9 +47,15 @@ export function sanitizeDisplayName(raw: unknown): string {
 export type QuickAccountResult = { accountId: string; isNew: boolean }
 
 /**
- * UPSERT-or-lookup keyed by `credentialHash`:
- *  - an account with that hash exists  -> authenticate-existing (return its id);
- *  - else INSERT a new account (`id = crypto.randomUUID()`) -> mint-new.
+ * UPSERT-or-lookup keyed by `credentialHash`, now layered over
+ * `device_credentials` (VGames identity):
+ *  1. a `device_credentials` row for this hash exists -> authenticate-existing
+ *     (touch `last_seen_at`, return its account id);
+ *  2. else a legacy `accounts.credential_hash` hit (an account minted before
+ *     `device_credentials` existed) -> authenticate-existing AND backfill a
+ *     device row for it, so it's on the new lookup path from here on;
+ *  3. else INSERT a new account (`id = crypto.randomUUID()`) -> mint-new, then
+ *     insert its device row.
  *
  * The INSERT uses `ON CONFLICT(credential_hash) DO NOTHING` + a re-read so two
  * concurrent first-time mints of the same brand-new credential converge on one
@@ -67,20 +74,39 @@ export async function quickAccount(
     timezone?: string | null
   },
 ): Promise<QuickAccountResult> {
+  const byDevice = await findAccountByDevice(db, params.credentialHash)
+  if (byDevice) {
+    await upsertDevice(db, params.credentialHash, byDevice, params.now)
+    return { accountId: byDevice, isNew: false }
+  }
+
   const existing = await db
     .prepare('SELECT id FROM accounts WHERE credential_hash = ?')
     .bind(params.credentialHash)
     .first<{ id: string }>()
-  if (existing) return { accountId: existing.id, isNew: false }
+  if (existing) {
+    // Legacy account with no device_credentials row yet — backfill it.
+    await upsertDevice(db, params.credentialHash, existing.id, params.now)
+    return { accountId: existing.id, isNew: false }
+  }
 
   const id = crypto.randomUUID()
   await db
     .prepare(
-      `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, country, region, timezone)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?)
+      `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, country, region, timezone, status, origin_game, last_seen_at)
+       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'ghost', 'iota', ?)
        ON CONFLICT(credential_hash) DO NOTHING`,
     )
-    .bind(id, params.credentialHash, params.displayName, params.now, params.country ?? null, params.region ?? null, params.timezone ?? null)
+    .bind(
+      id,
+      params.credentialHash,
+      params.displayName,
+      params.now,
+      params.country ?? null,
+      params.region ?? null,
+      params.timezone ?? null,
+      params.now,
+    )
     .run()
 
   const row = await db
@@ -88,7 +114,11 @@ export async function quickAccount(
     .bind(params.credentialHash)
     .first<{ id: string }>()
   const accountId = row?.id ?? id
-  return { accountId, isNew: accountId === id }
+  const isNew = accountId === id
+  // Whichever account id won the race (this insert or a concurrent one), it
+  // needs a device row for this credential hash.
+  await upsertDevice(db, params.credentialHash, accountId, params.now)
+  return { accountId, isNew }
 }
 
 function json(data: unknown, status = 200): Response {
