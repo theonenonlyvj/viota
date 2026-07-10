@@ -163,4 +163,50 @@ describe('/auth/login session-bound ghost-fold', () => {
     const aRow = await DB().prepare(`SELECT status FROM accounts WHERE id=?`).bind(aTok.accountId).first<{ status: string }>()
     expect(aRow!.status).toBe('claimed') // untouched — NOT folded/merged
   })
+
+  it('rebinds the device credential to the newly-logged-in account (browser must belong to whoever last authenticated on it)', async () => {
+    const aTok = (await (await q('/auth/quick', { deviceCredential: 'cred-rebind-A-000000', displayName: 'A' })).json()) as {
+      token: string
+      accountId: string
+    }
+    await SELF.fetch('https://example.com/auth/set-credentials', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + aTok.token },
+      body: JSON.stringify({ username: 'rebinda', password: 'hunter2' }),
+    })
+    const credRow = await DB()
+      .prepare(`SELECT credential_hash FROM device_credentials WHERE account_id=?`)
+      .bind(aTok.accountId)
+      .first<{ credential_hash: string }>()
+    const credHash = credRow!.credential_hash
+
+    const bTok = (await (await q('/auth/quick', { deviceCredential: 'cred-rebind-B-000000', displayName: 'B' })).json()) as {
+      token: string
+      accountId: string
+    }
+    await SELF.fetch('https://example.com/auth/set-credentials', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + bTok.token },
+      body: JSON.stringify({ username: 'rebindb', password: 'hunter2' }),
+    })
+
+    // Log into B's account, presenting A's device credential (the browser was
+    // previously A's; someone now logs in as B on that SAME device).
+    const r = await q('/auth/login', { username: 'rebindb', password: 'hunter2', deviceCredential: 'cred-rebind-A-000000' })
+    expect(r.status).toBe(200)
+
+    // The device row must now be REBOUND to B, not left pointing at A.
+    const devRow = await DB()
+      .prepare(`SELECT account_id FROM device_credentials WHERE credential_hash=?`)
+      .bind(credHash)
+      .first<{ account_id: string }>()
+    expect(devRow!.account_id).toBe(bTok.accountId)
+
+    // A later passwordless /auth/quick from that SAME device must resolve to
+    // B, not silently re-authenticate as the previous owner A with no password.
+    const quickAgain = (await (
+      await q('/auth/quick', { deviceCredential: 'cred-rebind-A-000000', displayName: 'whoever' })
+    ).json()) as { accountId: string }
+    expect(quickAgain.accountId).toBe(bTok.accountId)
+  })
 })
