@@ -235,9 +235,9 @@ describe('pressure: never-stall liveness across configs (repeated alarm fires)',
           const sql = state.storage.sql as SqlLike
           const { repo } = seedLiveGame(sql, { playerCount, aiSeats: [], presentSeats: [watcher], now: T })
           repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: takeover })
-          // Seat 0 is on turn but silently gone: stale last_seen so its cover
-          // deadline (last_seen + takeover) is already in the past.
-          repo.setPresence(0, T - (PRESENCE_MS + takeover + 10_000))
+          // Seat 0 is on turn and silently gone from the start: it's never in
+          // presentSeats, so last_seen_at stays null (isSeatPresent is false
+          // forever) without needing a fabricated stale timestamp.
           setTimer(sql, 'heal', -1, T) // give the wheel an entry to start firing
           await rearmAlarm(state, sql)
         })
@@ -249,6 +249,17 @@ describe('pressure: never-stall liveness across configs (repeated alarm fires)',
             assertInvariants(sql, `${name} pre-fire ${i}`)
             const repo = new GameRepository(sql)
             repo.setPresence(watcher, Date.now()) // keep the watcher genuinely present
+            // The cover deadline is now correctly the FULL patience window from
+            // detection (fix for the "AI covers instantly" bug), so a large
+            // takeover (up to 300s) can't be waited out in real test time, and
+            // must not lose a race against the 60s `heal` self-tick re-arming
+            // itself forever at "now + HEAL_MS" (which would starve a longer
+            // turn deadline of ever becoming the earliest timer). Simulate real
+            // elapsed time reaching that deadline by pulling any still-future
+            // absence/drive timer for seat 0 in to "now" — the same technique
+            // the eviction-credit tests use (manipulating storage to fake the
+            // passage of time none of us can actually wait out here).
+            sql.exec(`UPDATE timers SET fire_at = ? WHERE seat = 0 AND fire_at > ?`, Date.now(), Date.now())
             const m = repo.getMeta()!
             return { seat: m.current_seat, status: m.status }
           })

@@ -78,9 +78,16 @@ export function promoteHost(repo: GameRepository, departingSeat: number, now: nu
  *    never armed and a long "thinking" turn is never interrupted;
  *  - honors the host's patience (`meta.ai_takeover_ms`, falling back to the fixed
  *    `AWAY_TURN_MS` when unset) and arms NOTHING for "wait for me" (=== 0);
- *  - bases the deadline on the seat's `last_seen_at` so a seat that has already
- *    been gone a while is covered promptly, not granted a fresh full window each
- *    tick, and never has its deadline pushed out by a later call.
+ *  - bases the deadline on `now` — the moment THIS call detects the seat is
+ *    current-and-absent — NOT on the seat's stale `last_seen_at`. A backgrounded
+ *    tab stops heartbeating entirely (client gates the heartbeat interval on
+ *    `document.visibilityState`), so by the time the turn rotates onto that
+ *    seat `last_seen_at` can already be older than the patience window; basing
+ *    the deadline on it would arm an ALREADY-DUE timer and cover with ~0s of
+ *    the intended patience. Using `now` always grants the full window from
+ *    detection. The single-arm guard just above (`hasTimer`) still ensures this
+ *    only happens ONCE per turn — a later heal tick does not push the deadline
+ *    out or grant a fresh window on every call.
  * The alarm's `turn` branch re-checks presence and spares a player who returns
  * before it fires, so arming here can never wrongly cover a reconnecting player.
  */
@@ -93,8 +100,7 @@ export function armDisconnectCoverIfAbsent(repo: GameRepository, sql: SqlLike, n
   if (!seat || seat.owner_type !== 'human' || seat.controlled_by_ai) return // not a human seat to cover
   if (isSeatPresent(seat, now)) return // connected → never auto-covered
   if (hasTimer(sql, 'turn', meta.current_seat)) return // already armed — don't push it out
-  const base = seat.last_seen_at ?? now
-  setTimer(sql, 'turn', meta.current_seat, base + (takeover ?? AWAY_TURN_MS))
+  setTimer(sql, 'turn', meta.current_seat, now + (takeover ?? AWAY_TURN_MS))
 }
 
 /** Broadcast surface for auto-cover (a dismissible `ai_cover` toast). */

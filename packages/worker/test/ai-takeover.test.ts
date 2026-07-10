@@ -93,6 +93,24 @@ describe('configurable AI-takeover (meta.ai_takeover_ms)', () => {
       })
     })
 
+    it('bases the deadline on NOW (detection time), not a stale last_seen_at, for a seat that heartbeated before going dark (backgrounded tab)', async () => {
+      await runInDurableObject(stubFor('auto-arm-stale-heartbeat'), (_i: any, state: any) => {
+        const sql = state.storage.sql as SqlLike
+        // seat 0 is on turn and DID heartbeat once at NOW, then the tab was
+        // backgrounded and stopped heartbeating entirely.
+        const { repo } = seedLiveGame(sql, { playerCount: 2, aiSeats: [], presentSeats: [0], now: NOW })
+        repo.putMeta({ ...repo.getMeta()!, ai_takeover_ms: 60_000 })
+        // Time passes well past PRESENCE_MS so seat 0 is now detected absent.
+        const detectAt = NOW + 200_000
+        expect(hasTimer(sql, 'turn', 0)).toBe(false)
+        armDisconnectCoverIfAbsent(repo, sql, detectAt)
+        expect(hasTimer(sql, 'turn', 0)).toBe(true)
+        // Must be the FULL patience window from detection (now), not
+        // last_seen_at (NOW) + patience, which would already be past-due.
+        expect(minFireAt(sql)).toBe(detectAt + 60_000)
+      })
+    })
+
     it('is idempotent: repeated calls do not push the deadline out', async () => {
       await runInDurableObject(stubFor('auto-arm-idem'), (_i: any, state: any) => {
         const sql = state.storage.sql as SqlLike
