@@ -75,3 +75,16 @@ test('settings gear renders and calls onOpenSettings when clicked', async () => 
   await userEvent.click(gear)
   expect(onOpenSettings).toHaveBeenCalledOnce()
 })
+
+test('marks the current-turn player pill with aria-current, and no other pill', () => {
+  render(<TopBar {...defaultProps} playerNames={['Alice', 'Bob']} turnIndex={1} />)
+  const alice = screen.getByText('Alice').closest('[aria-current], div')!
+  const bob = screen.getByText('Bob').closest('[aria-current], div')!
+  expect(bob).toHaveAttribute('aria-current', 'true')
+  expect(alice).not.toHaveAttribute('aria-current')
+})
+
+test('does not mark any pill as current when turnIndex is omitted', () => {
+  const { container } = render(<TopBar {...defaultProps} playerNames={['Alice', 'Bob']} />)
+  expect(container.querySelector('[aria-current]')).not.toBeInTheDocument()
+})
