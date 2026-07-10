@@ -81,7 +81,7 @@ export function applyAndPersist(_sql: SqlLike, repo: GameRepository, params: App
   // a reconnect retry never surfaces a false "not your turn". (SQLite permits
   // multiple NULL client_move_id.)
   if (params.clientMoveId != null && repo.moveExistsByClientId(params.clientMoveId)) {
-    return { duplicate: true, view: buildClientView(snapshot, params.seatIndex) }
+    return { duplicate: true, view: buildClientView(snapshot, params.seatIndex, seats) }
   }
 
   // (c2) reclaim-race guard (must-fix #4) — re-read turn + AI-control from the
@@ -144,5 +144,5 @@ export function applyAndPersist(_sql: SqlLike, repo: GameRepository, params: App
   repo.putSnapshot(newState)
   repo.putMeta({ ...meta, move_index: moveIndex, current_seat: newState.turnIndex, status: newStatus })
 
-  return { ok: true, moveIndex, view: buildClientView(newState, params.seatIndex) }
+  return { ok: true, moveIndex, view: buildClientView(newState, params.seatIndex, seats) }
 }

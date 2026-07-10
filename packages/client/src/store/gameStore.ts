@@ -33,6 +33,10 @@ type GameStore = {
   mySeat: number
   moveIndex: number
   handCounts: number[]
+  /** Live server-authoritative display names, indexed by seat (fix: no more
+   *  stale "Open/Open" or fabricated "Player N" — refreshes every sync). Empty
+   *  until the first server view carrying a roster arrives. */
+  players: string[]
   drawPileCount: number
   pending: boolean            // a local move is in flight (no optimistic board mutation)
   aiCoverSeat: number | null  // dismissible ai_cover toast target
@@ -110,6 +114,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   mySeat: 0,
   moveIndex: 0,
   handCounts: [],
+  players: [],
   drawPileCount: 0,
   pending: false,
   aiCoverSeat: null,
@@ -307,6 +312,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       grid: new Map(),
       hands: [],
       handCounts: [],
+      players: [],
       drawPileCount: 0,
       scores: [],
       turnIndex: 0,
@@ -341,6 +347,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const isMyTurn = view.turnIndex === view.mySeat
     const last = moves && moves.length > 0 ? moves[moves.length - 1] : undefined
     const vetoOffer = !!(isMyTurn && !view.finished && last && last.byAi && last.seatIndex === view.mySeat)
+    // Server-authoritative names (seat order), when the view carries a roster.
+    // Empty when it doesn't (never in production; only an under-specified test
+    // fixture), so the caller can fall back to whatever it had before.
+    const players = (view.players ?? []).map((p) => p.displayName)
     set({
       mode: 'online',
       moveIndex,
@@ -350,6 +360,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       grid,
       hands,
       handCounts: view.handCounts,
+      players,
       drawPileCount: view.drawPileCount,
       scores: view.scores,
       turnIndex: view.turnIndex,

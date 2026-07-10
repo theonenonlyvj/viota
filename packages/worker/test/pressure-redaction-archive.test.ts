@@ -71,7 +71,7 @@ const gameSeed = (g: number) => (BASE_SEED + g * 0x9e3779b1) >>> 0
 const CARD_TOTAL = 66 // 64 unique regulars + 2 wilds
 const CLIENT_VIEW_KEYS = [
   'consecutivePasses', 'drawPileCount', 'finished', 'grid', 'handCounts',
-  'myHand', 'mySeat', 'playedCards', 'scores', 'turnIndex',
+  'myHand', 'mySeat', 'playedCards', 'players', 'scores', 'turnIndex',
 ].sort()
 // Keys that must NEVER appear ANYWHERE in a client-reachable payload.
 const FORBIDDEN_KEYS = new Set([
@@ -162,8 +162,9 @@ function assertMovesRedacted(moves: any[], ctx: string): void {
 function assertAllSeats(repo: GameRepository, ctx: string): GameState {
   const snap = repo.getSnapshot()!
   assertConservation(snap, ctx)
+  const seats = repo.getSeats()
   for (let s = 0; s < snap.hands.length; s++) {
-    assertViewRedacted(buildClientView(snap, s), snap, s, ctx)
+    assertViewRedacted(buildClientView(snap, s, seats), snap, s, ctx)
   }
   const moves = repo.getMovesSince(0).filter((m) => !m.reverted).map(toClientMove)
   assertMovesRedacted(moves, ctx)
@@ -346,7 +347,7 @@ describe('PRESSURE: redaction fuzz (no hand/drawPile/initial_state leak, ever)',
                 vetos++
                 for (const idx of vres.revertedIndices) repo.enqueueOutbox(idx)
                 assertViewRedacted(
-                  buildClientView(vres.rebuilt, vseat), repo.getSnapshot()!, vseat, `${ctx} veto-result`,
+                  buildClientView(vres.rebuilt, vseat, repo.getSeats()), repo.getSnapshot()!, vseat, `${ctx} veto-result`,
                 )
                 assertAllSeats(repo, `${ctx} post-veto`)
               }

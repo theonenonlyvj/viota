@@ -1,5 +1,5 @@
 import type { Card, GameState, RegularCard } from '@viota/engine'
-import type { GameRepository } from './storage'
+import type { GameRepository, SeatRow } from './storage'
 
 /**
  * Per-seat redacted client view — the ONLY shape a client ever receives.
@@ -26,6 +26,27 @@ export type ClientView = {
   playedCards: RegularCard[]
   consecutivePasses: number
   finished: boolean
+  /** Live seat roster (names are public within a game; nothing hidden here).
+   *  Sourced from `seats.display_name`, NEVER from a one-time client snapshot,
+   *  so it refreshes correctly both for the host (past the "Open/Open"
+   *  placeholder) and on resume (past a fabricated "Player N"). */
+  players: ClientPlayer[]
+}
+
+export type ClientPlayer = { seat: number; displayName: string; ownerType: string }
+
+/** A seat's public display label: its real name when set, else an
+ *  ownerType-appropriate placeholder (never "Player N" for a real human — that
+ *  fabrication is exactly the bug this roster replaces). */
+function playerLabel(s: SeatRow): string {
+  if (s.display_name && s.display_name.length > 0) return s.display_name
+  if (s.owner_type === 'open') return 'Open'
+  if (s.owner_type === 'ai') return `AI ${s.seat_index + 1}`
+  return `Player ${s.seat_index + 1}`
+}
+
+export function buildPlayerRoster(seats: SeatRow[]): ClientPlayer[] {
+  return seats.map((s) => ({ seat: s.seat_index, displayName: playerLabel(s), ownerType: s.owner_type }))
 }
 
 /**
@@ -65,7 +86,7 @@ export function buildWaitingRoomView(repo: GameRepository): WaitingRoomView {
   }
 }
 
-export function buildClientView(state: GameState, seatIndex: number): ClientView {
+export function buildClientView(state: GameState, seatIndex: number, seats: SeatRow[]): ClientView {
   return {
     grid: [...state.grid.entries()],
     mySeat: seatIndex,
@@ -77,5 +98,6 @@ export function buildClientView(state: GameState, seatIndex: number): ClientView
     playedCards: state.playedCards,
     consecutivePasses: state.consecutivePasses ?? 0,
     finished: state.finished ?? false,
+    players: buildPlayerRoster(seats),
   }
 }

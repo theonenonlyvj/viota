@@ -50,7 +50,12 @@ export default function OnlineGame() {
   const doVeto = useGameStore(s => s.doVeto)
   const dismissAiCover = useGameStore(s => s.dismissAiCover)
 
-  const players = session?.players ?? []
+  const serverPlayers = useGameStore(s => s.players)
+  // Server-authoritative roster (refreshes every sync) wins once it arrives;
+  // the session snapshot is only a first-paint placeholder before that (fix:
+  // no more stale "Open/Open" from room creation or fabricated "Player N" on
+  // resume — both were client-only guesses that never refreshed).
+  const players = serverPlayers.length > 0 ? serverPlayers : (session?.players ?? [])
 
   // No session -> back home.
   useEffect(() => {

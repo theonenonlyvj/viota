@@ -735,7 +735,7 @@ export class GameDO extends DurableObject<Env> {
 
     const snapshot = this.repo.getSnapshot()
     if (!snapshot) return json({ error: 'no_snapshot' }, 500)
-    return json({ moveIndex: this.repo.getMeta()!.move_index, snapshot: buildClientView(snapshot, ownSeat.seat_index) })
+    return json({ moveIndex: this.repo.getMeta()!.move_index, snapshot: buildClientView(snapshot, ownSeat.seat_index, this.repo.getSeats()) })
   }
 
   /**
@@ -944,7 +944,7 @@ export class GameDO extends DurableObject<Env> {
     await rearmAlarm(this.ctx, sql)
 
     // Redacted snapshot LAST — the human resumes from the current board.
-    return json({ moveIndex: meta.move_index, snapshot: buildClientView(snapshot, seatIndex) })
+    return json({ moveIndex: meta.move_index, snapshot: buildClientView(snapshot, seatIndex, this.repo.getSeats()) })
   }
 
   /**
@@ -991,7 +991,7 @@ export class GameDO extends DurableObject<Env> {
       ok: true,
       moveIndex: result.moveIndex, // unchanged max — the human's next /move is +1
       reverted: result.revertedIndices,
-      snapshot: buildClientView(result.rebuilt, seatIndex),
+      snapshot: buildClientView(result.rebuilt, seatIndex, this.repo.getSeats()),
     })
   }
 
@@ -1050,7 +1050,7 @@ export class GameDO extends DurableObject<Env> {
 
     return json({
       moveIndex: meta.move_index,
-      snapshot: buildClientView(snapshot, seat),
+      snapshot: buildClientView(snapshot, seat, this.repo.getSeats()),
       moves,
     })
   }

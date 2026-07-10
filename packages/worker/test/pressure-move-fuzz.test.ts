@@ -184,10 +184,10 @@ function assertGlobalInvariants(repo: GameRepository, initialState: GameState, s
   // (d) NO LEAK — the per-seat view exposes only that seat's cards, never
   // another hand or the ordered draw pile.
   for (let s = 0; s < snapshot.hands.length; s++) {
-    const view = buildClientView(snapshot, s)
+    const view = buildClientView(snapshot, s, repo.getSeats())
     const keys = Object.keys(view).sort()
     expect(keys, at(seed, step, `view keys seat ${s}`)).toEqual(
-      ['consecutivePasses', 'drawPileCount', 'finished', 'grid', 'handCounts', 'myHand', 'mySeat', 'playedCards', 'scores', 'turnIndex'].sort(),
+      ['consecutivePasses', 'drawPileCount', 'finished', 'grid', 'handCounts', 'myHand', 'mySeat', 'playedCards', 'players', 'scores', 'turnIndex'].sort(),
     )
     expect(view.mySeat).toBe(s)
     expect(view.myHand, at(seed, step, `own hand seat ${s}`)).toEqual(snapshot.hands[s])
