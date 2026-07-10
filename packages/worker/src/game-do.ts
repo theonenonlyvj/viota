@@ -637,13 +637,28 @@ export class GameDO extends DurableObject<Env> {
 
     const meta = this.repo.getMeta()
     if (!meta) return json({ error: 'game_not_found' }, 404)
-    if (meta.status !== 'waiting') return json({ error: 'not_waiting' }, 409)
 
     const seats = this.repo.getSeats()
 
-    // Idempotent: an account already seated gets the SAME seat back.
+    // Idempotent-first (must precede the status gate below): an account that
+    // ALREADY owns a seat here gets it back regardless of status, so clicking
+    // the invite link back into a game you're already in — waiting OR already
+    // STARTED — re-enters it instead of a 409 not_waiting. `room` is the
+    // waiting-room roster only while still waiting; once active there's no
+    // roster shape to return (the client re-syncs the real board instead), so
+    // it's null and the caller routes on `status`. A NEW joiner (no existing
+    // seat) is still fully status/full gated below — this never opens a
+    // started game to anyone but its own seat-holders.
     const already = seats.find((s) => s.owner_account_id === auth.accountId)
-    if (already) return json({ seatIndex: already.seat_index, room: buildWaitingRoomView(this.repo) })
+    if (already) {
+      return json({
+        seatIndex: already.seat_index,
+        status: meta.status,
+        room: meta.status === 'waiting' ? buildWaitingRoomView(this.repo) : null,
+      })
+    }
+
+    if (meta.status !== 'waiting') return json({ error: 'not_waiting' }, 409)
 
     // Resolve the target: an explicit OPEN seatIndex, else the lowest open seat.
     let target: SeatRow | undefined
@@ -672,7 +687,7 @@ export class GameDO extends DurableObject<Env> {
     // Write-through the joined seat to the D1 game_players index (non-blocking).
     this.ctx.waitUntil(this.archiveSeats(Date.now()))
 
-    return json({ seatIndex: target.seat_index, room: buildWaitingRoomView(this.repo) })
+    return json({ seatIndex: target.seat_index, status: meta.status, room: buildWaitingRoomView(this.repo) })
   }
 
   /**

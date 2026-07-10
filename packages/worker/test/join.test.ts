@@ -1,6 +1,6 @@
 import { SELF, env, runInDurableObject } from 'cloudflare:test'
 import { it, expect, beforeAll } from 'vitest'
-import { authHeaders, createSoloGame } from './helpers'
+import { authHeaders, createSoloGame, createActiveGame } from './helpers'
 import { applyD1Schema } from '../src/d1/schema'
 import { runMigrations, GameRepository } from '../src/do/storage'
 import { createWaitingRoom } from '../src/do/init'
@@ -87,6 +87,23 @@ it('POST /join 409s when the game is not waiting', async () => {
   const gameId = await createSoloGame('a0')
   const res = await join(gameId, 'stranger')
   expect(res.status).toBe(409)
+})
+
+it('POST /join on an ACTIVE game: an already-seated account gets its seat back (fix: invite link resumes a started game)', async () => {
+  const gameId = await createActiveGame(['a0', 'a1'])
+  const res = await join(gameId, 'a1') // a1 already owns seat 1; the game has started
+  expect(res.status).toBe(200)
+  const b = (await res.json()) as any
+  expect(b.seatIndex).toBe(1)
+  expect(b.status).toBe('active')
+  expect(b.room).toBeNull() // no waiting-room roster once started
+})
+
+it('POST /join on an ACTIVE game: a NON-owner is still rejected (409 not_waiting)', async () => {
+  const gameId = await createActiveGame(['a0', 'a1'])
+  const res = await join(gameId, 'a-stranger')
+  expect(res.status).toBe(409)
+  expect((await res.json() as any).error).toBe('not_waiting')
 })
 
 it('POST /join requires auth', async () => {

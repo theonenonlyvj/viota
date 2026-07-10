@@ -272,17 +272,29 @@ describe('/join after go-live', () => {
     expect(after.cardTotal).toBe(DECK_SIZE)
   })
 
-  it('an already-seated human who re-joins an active game gets 409 (not a fresh seat)', async () => {
+  it('an already-seated human who re-joins an active game gets ITS OWN seat back, not 409 (fix: invite link resumes a started game)', async () => {
     const gameId = await createRoom('host', 2, 60_000)
     await join(gameId, 'p1')
     await start(gameId, 'host')
-    // p1 is already seated but the game is active -> handleJoin's not_waiting
-    // guard fires BEFORE the idempotent-seat return.
+    const before = await inspect(gameId)
+
+    // p1 is already seated AND the game is active -> the idempotent-seat
+    // shortcut now fires BEFORE the not_waiting guard, so p1 re-enters the
+    // game it's already in (e.g. clicking the invite link back in) instead of
+    // being rejected.
     const res = await join(gameId, 'p1')
-    expect(res.status).toBe(409)
-    const s = await inspect(gameId)
-    expect(s.status).toBe('active')
-    expect(s.cardTotal).toBe(DECK_SIZE)
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as any
+    expect(body.seatIndex).toBe(1) // p1's own seat, not a fresh one
+    expect(body.status).toBe('active')
+    expect(body.room).toBeNull()
+
+    // Nothing about the live game changed — this is a read-only re-entry.
+    const after = await inspect(gameId)
+    expect(after.status).toBe('active')
+    expect(after.seats).toEqual(before.seats)
+    expect(after.initFingerprint).toBe(before.initFingerprint)
+    expect(after.cardTotal).toBe(DECK_SIZE)
   })
 })
 
