@@ -12,6 +12,7 @@ type Props = {
   onRotateCW: () => void
   onRotateCCW: () => void
   playerNames?: string[]
+  turnIndex?: number
   turnTimer?: number
   connectionStatus?: 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
   onOpenSettings?: () => void
@@ -19,23 +20,32 @@ type Props = {
 
 const pill: React.CSSProperties = {
   background: '#1e1e3a', borderRadius: 6, padding: '5px 12px', fontSize: 12, color: '#aaa',
+  border: '1px solid transparent',
+}
+const activePill: React.CSSProperties = {
+  ...pill,
+  background: '#1e3a2e', border: '1px solid #4ade80', boxShadow: '0 0 0 1px rgba(74,222,128,0.35)',
 }
 const btn: React.CSSProperties = {
   background: '#1e1e3a', border: '1px solid #3a3a5a', color: '#aaa',
   borderRadius: 4, padding: '3px 10px', fontSize: 13, cursor: 'pointer',
 }
 
-export default function TopBar({ scores, drawPileCount, playerCount, humanIndex, difficulty, onZoomIn, onZoomOut, onAutoFit, onRotateCW, onRotateCCW, playerNames, turnTimer, connectionStatus, onOpenSettings }: Props) {
+export default function TopBar({ scores, drawPileCount, playerCount, humanIndex, difficulty, onZoomIn, onZoomOut, onAutoFit, onRotateCW, onRotateCCW, playerNames, turnIndex, turnTimer, connectionStatus, onOpenSettings }: Props) {
   return (
     <div style={{ background: '#12122a', padding: '10px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #2a2a4a', flexShrink: 0 }}>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-        {scores.map((s, i) => (
-          <div key={i} style={pill}>
-            <span style={{ color: '#fff', fontWeight: 'bold' }}>{playerNames ? playerNames[i] ?? `P${i + 1}` : i === humanIndex ? 'You' : 'AI'}</span>
-            {' '}
-            <span style={{ color: i === humanIndex ? '#4ade80' : '#aaa', fontWeight: 'bold' }}>{s}</span>
-          </div>
-        ))}
+        {scores.map((s, i) => {
+          const isCurrent = turnIndex !== undefined && i === turnIndex
+          return (
+            <div key={i} style={isCurrent ? activePill : pill} aria-current={isCurrent ? 'true' : undefined}>
+              <span style={{ color: '#fff', fontWeight: 'bold' }}>{playerNames ? playerNames[i] ?? `P${i + 1}` : i === humanIndex ? 'You' : 'AI'}</span>
+              {' '}
+              <span style={{ color: i === humanIndex ? '#4ade80' : '#aaa', fontWeight: 'bold' }}>{s}</span>
+              {isCurrent && <span style={{ color: '#4ade80', marginLeft: 6, fontSize: 11 }} aria-hidden="true">●</span>}
+            </div>
+          )
+        })}
       </div>
       <div style={{ fontSize: 12, color: '#6b7280' }}>
         Draw pile: <span style={{ color: '#fff', fontWeight: 'bold' }}>{drawPileCount}</span>

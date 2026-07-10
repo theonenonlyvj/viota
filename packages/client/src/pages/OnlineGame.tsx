@@ -143,6 +143,7 @@ export default function OnlineGame() {
         onRotateCW={() => boardRef.current?.rotateCW()}
         onRotateCCW={() => boardRef.current?.rotateCCW()}
         playerNames={players}
+        turnIndex={finished ? undefined : turnIndex}
         onOpenSettings={() => setSettingsOpen(true)}
       />
 
