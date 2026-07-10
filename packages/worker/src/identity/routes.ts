@@ -9,7 +9,8 @@ import { hashPassword, verifyPassword, needsRehash } from './pbkdf2'
 import { validateUsername, validatePassword } from './username'
 import { hashCredential } from '../d1/accounts'
 import { upsertDevice } from '../d1/devices'
-import { signVGamesToken } from '../jwt'
+import { signVGamesToken, verifyAnyToken } from '../jwt'
+import { canonical } from './canonical'
 
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -137,4 +138,37 @@ export async function handleLogin(request: Request, env: IdentityEnv & { JWT_SEC
 
   const token = await signVGamesToken({ accountId: acc.id, status: acc.status, epoch: acc.token_epoch }, env.JWT_SECRET)
   return json({ token, accountId: acc.id, mustChangePassword: !!acc.must_change_pw })
+}
+
+/**
+ * `POST /auth/introspect { token }` — server-to-server (e.g. vjaipur's Express
+ * server, or any future client) token validation. ALWAYS returns HTTP 200 —
+ * validity is communicated purely via the `{valid}` body field, never the
+ * status code, so a caller never has to special-case a 401/503 from this
+ * endpoint the way it would an authed route. Applies the same epoch-staleness
+ * + merge-canonicalization rules as `requireCanonicalAccount`.
+ */
+export async function handleIntrospect(request: Request, env: IdentityEnv): Promise<Response> {
+  let body: { token?: unknown }
+  try {
+    body = (await request.json()) as typeof body
+  } catch {
+    return json({ valid: false })
+  }
+  const token = String(body.token ?? '')
+  if (!env.JWT_SECRET) return json({ valid: false })
+
+  const claims = await verifyAnyToken(token, env.JWT_SECRET)
+  if (!claims) return json({ valid: false })
+
+  const row = await env.DB.prepare(`SELECT token_epoch FROM accounts WHERE id=?`)
+    .bind(claims.accountId)
+    .first<{ token_epoch: number }>()
+  if (!row) return json({ valid: false })
+  if (claims.epoch !== undefined && claims.epoch !== row.token_epoch) return json({ valid: false })
+
+  const canon = await canonical(env.DB, claims.accountId)
+  if (!canon || canon.status === 'merged') return json({ valid: false })
+
+  return json({ valid: true, accountId: canon.id, status: canon.status })
 }
