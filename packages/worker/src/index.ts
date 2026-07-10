@@ -2,7 +2,7 @@ import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { handleAuthQuick } from './d1/accounts'
 import { handleClaim } from './d1/claim'
-import { handleSetCredentials, handleLogin, handleIntrospect } from './identity/routes'
+import { handleSetCredentials, handleLogin, handleIntrospect, handleAdminMerge } from './identity/routes'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
@@ -72,6 +72,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     // servers (e.g. vjaipur) to verify a client-presented vgames token.
     if (request.method === 'POST' && path === '/auth/introspect') {
       return handleIntrospect(request, env)
+    }
+
+    // POST /admin/merge -> VGames identity: operator-driven account merge.
+    // Gated by a SEPARATE admin step-up token (ADMIN_JWT_SECRET), never the
+    // player-facing JWT_SECRET.
+    if (request.method === 'POST' && path === '/admin/merge') {
+      return handleAdminMerge(request, env)
     }
 
     // POST /claim -> claim device ghost games into the authed account.
