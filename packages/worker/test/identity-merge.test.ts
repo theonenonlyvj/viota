@@ -90,4 +90,24 @@ describe('mergeAccounts', () => {
     const res = await mergeAccounts(DB(), 'self1', 'self1', 'system:login', 't')
     expect(res.noop).toBe(true)
   })
+
+  it('two near-simultaneous identical merges race the idempotency check gracefully (no unhandled UNIQUE 500)', async () => {
+    // Both calls can pass the pre-batch idempotency SELECT (neither sees an
+    // active account_merges row yet) before either's db.batch INSERT lands —
+    // the uidx_merge_active UNIQUE index then rejects the loser. That must
+    // resolve to a graceful noop result, never an unhandled/thrown error.
+    await mkAcct('into5')
+    await mkAcct('from5')
+    const results = await Promise.all([
+      mergeAccounts(DB(), 'from5', 'into5', 'system:login', 'race'),
+      mergeAccounts(DB(), 'from5', 'into5', 'system:login', 'race'),
+    ])
+    for (const res of results) {
+      expect(res.ok).toBe(true)
+    }
+    const row = await DB()
+      .prepare(`SELECT status, merged_into FROM accounts WHERE id='from5'`)
+      .first<{ status: string; merged_into: string }>()
+    expect(row).toMatchObject({ status: 'merged', merged_into: 'into5' })
+  })
 })

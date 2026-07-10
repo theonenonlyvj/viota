@@ -90,17 +90,30 @@ export async function mergeAccounts(
 
   const now = Date.now()
   const mergeId = crypto.randomUUID()
-  await db.batch([
-    db.prepare(`UPDATE device_credentials  SET account_id=? WHERE account_id=?`).bind(into, fromId),
-    db.prepare(`UPDATE game_players        SET account_id=? WHERE account_id=?`).bind(into, fromId),
-    db.prepare(`UPDATE external_identities SET account_id=? WHERE account_id=?`).bind(into, fromId),
-    db
-      .prepare(`INSERT INTO account_merges (id, from_account_id, into_account_id, merged_by, reason, merged_at) VALUES (?,?,?,?,?,?)`)
-      .bind(mergeId, fromId, into, actor, reason, now),
-    db.prepare(`UPDATE accounts SET status='merged', merged_into=?, token_epoch=token_epoch+1 WHERE id=?`).bind(into, fromId),
-    // Path-compress: anything that pointed at fromId now points straight at into.
-    db.prepare(`UPDATE accounts SET merged_into=? WHERE merged_into=?`).bind(into, fromId),
-  ])
+  try {
+    await db.batch([
+      db.prepare(`UPDATE device_credentials  SET account_id=? WHERE account_id=?`).bind(into, fromId),
+      db.prepare(`UPDATE game_players        SET account_id=? WHERE account_id=?`).bind(into, fromId),
+      db.prepare(`UPDATE external_identities SET account_id=? WHERE account_id=?`).bind(into, fromId),
+      db
+        .prepare(`INSERT INTO account_merges (id, from_account_id, into_account_id, merged_by, reason, merged_at) VALUES (?,?,?,?,?,?)`)
+        .bind(mergeId, fromId, into, actor, reason, now),
+      db.prepare(`UPDATE accounts SET status='merged', merged_into=?, token_epoch=token_epoch+1 WHERE id=?`).bind(into, fromId),
+      // Path-compress: anything that pointed at fromId now points straight at into.
+      db.prepare(`UPDATE accounts SET merged_into=? WHERE merged_into=?`).bind(into, fromId),
+    ])
+  } catch (e) {
+    // Two near-simultaneous identical merges can both pass the idempotency
+    // SELECT above before either's INSERT lands — the loser trips
+    // `uidx_merge_active` (UNIQUE on from_account_id WHERE superseded_by IS
+    // NULL). That's the SAME situation the pre-check exists to short-circuit,
+    // just discovered a beat later, so it gets the same graceful no-op
+    // instead of bubbling up as an unhandled 500.
+    if (String((e as Error)?.message || '').includes('UNIQUE')) {
+      return { ok: true, retagCounts: {}, selfPlayFlags: [], dryRun, noop: true }
+    }
+    throw e
+  }
 
   return { ok: true, retagCounts, selfPlayFlags, dryRun: false }
 }
