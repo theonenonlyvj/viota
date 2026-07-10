@@ -4,7 +4,11 @@ import { vi } from 'vitest'
 
 const navigate = vi.fn()
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<any>()), useNavigate: () => navigate }))
-vi.mock('../net/lobby', () => ({ myGames: vi.fn() }))
+vi.mock('../net/lobby', () => ({
+  myGames: vi.fn(),
+  placeholderPlayers: (playerCount: number, mySeat: number, myName: string) =>
+    Array.from({ length: playerCount }, (_, i) => (i === mySeat ? myName : `Player ${i + 1}`)),
+}))
 vi.mock('../hooks/useLocalResumableGame', () => ({ useLocalResumableGame: vi.fn(() => null) }))
 vi.mock('../net/session', () => ({ saveSession: vi.fn() }))
 vi.mock('../net/identity', () => ({ getDisplayName: () => 'Me' }))

@@ -11,7 +11,11 @@ vi.mock('./WaitingRoom', () => ({ default: () => <div>waiting-room</div> }))
 vi.mock('../components/JoinRoom', () => ({ default: ({ code }: { code: string }) => <div>join {code}</div> }))
 
 const myGames = vi.fn()
-vi.mock('../net/lobby', () => ({ myGames: (...a: unknown[]) => myGames(...a) }))
+vi.mock('../net/lobby', () => ({
+  myGames: (...a: unknown[]) => myGames(...a),
+  placeholderPlayers: (playerCount: number, mySeat: number, myName: string) =>
+    Array.from({ length: playerCount }, (_, i) => (i === mySeat ? myName : `Player ${i + 1}`)),
+}))
 
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {

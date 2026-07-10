@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { serverUrl } from '../net/config'
 import { getDisplayName } from '../net/identity'
-import { myGames, type ResumableGame } from '../net/lobby'
+import { myGames, placeholderPlayers, type ResumableGame } from '../net/lobby'
 import { saveSession } from '../net/session'
 import { useLocalResumableGame } from '../hooks/useLocalResumableGame'
 
@@ -28,8 +28,7 @@ export default function ResumeStrip() {
   }, [])
 
   function resumeOnline(g: ResumableGame) {
-    const players = Array.from({ length: g.playerCount }, (_, i) =>
-      i === g.seatIndex ? getDisplayName() : `Player ${i + 1}`)
+    const players = placeholderPlayers(g.playerCount, g.seatIndex, getDisplayName())
     saveSession({ gameId: g.gameId, code: g.code ?? '', mySeat: g.seatIndex, players })
     if (g.status === 'waiting') navigate(`/lobby/${g.code ?? ''}`)
     else navigate('/game/online')
