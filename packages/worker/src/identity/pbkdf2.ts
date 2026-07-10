@@ -4,13 +4,14 @@
  * below.
  *
  * PHC format: `pbkdf2-sha256$i=<iterations>$<base64 salt>$<base64 derived key>`.
- * 16-byte random salt, 32-byte derived key, target 600000 iterations (a floor
- * of 210000 is acceptable if the Workers CPU budget forces a lower value at
- * call time — `needsRehash` flags any hash below the current target so a
- * successful login can opportunistically upgrade it).
+ * 16-byte random salt, 32-byte derived key, target 100000 iterations —
+ * 100000 is workerd's hard maximum for PBKDF2 (higher throws
+ * NotSupportedError); this is the ceiling on Workers, below the OWASP 600k
+ * ideal but the platform limit. `needsRehash` flags any hash below the
+ * current target so a successful login can opportunistically upgrade it.
  */
 
-export const PBKDF2_ITERS = 600000
+export const PBKDF2_ITERS = 100000
 const KEYLEN = 32
 const SALTLEN = 16
 

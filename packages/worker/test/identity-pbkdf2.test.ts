@@ -12,7 +12,7 @@ describe('pbkdf2', () => {
     expect(await hashPassword('x')).not.toBe(await hashPassword('x'))
   })
   it('honors iteration count and flags rehash', async () => {
-    const weak = await hashPassword('x', 210000)
+    const weak = await hashPassword('x', 50000)
     expect(await verifyPassword('x', weak)).toBe(true) // still verifies at lower i
     expect(needsRehash(weak, PBKDF2_ITERS)).toBe(true)
     const strong = await hashPassword('x', PBKDF2_ITERS)
