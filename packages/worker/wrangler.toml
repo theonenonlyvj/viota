@@ -46,3 +46,12 @@ crons = ["* * * * *"]
 # pinned to that one origin. workers.dev and pages.dev are DIFFERENT origins — if
 # CLIENT_ORIGIN is left unset in prod, the browser still works (`*`) but the pin
 # is lost; setting it is the intended, safer prod posture. See src/cors.ts.
+#
+# ADMIN_JWT_SECRET (VGames identity, Phase A12) is ALSO DELIBERATELY NOT set
+# here — no value, comment only. It gates POST /admin/merge (src/identity/admin.ts)
+# and is a SEPARATE secret from JWT_SECRET: a leaked/compromised player token
+# must never be able to authorize an account merge. Unset (the default), every
+# /admin/merge request 401s (fail-closed) — set it ONLY when an admin merge is
+# actually needed via `wrangler secret put ADMIN_JWT_SECRET` (32+ byte random,
+# independent of JWT_SECRET), mint a short-lived {aud:'vgames-admin'} HS256
+# token signed with it out-of-band, and consider rotating it out again after.

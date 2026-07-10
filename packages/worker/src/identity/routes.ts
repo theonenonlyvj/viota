@@ -12,6 +12,7 @@ import { upsertDevice, findAccountByDevice } from '../d1/devices'
 import { signVGamesToken, verifyAnyToken } from '../jwt'
 import { canonical } from './canonical'
 import { mergeAccounts } from './merge'
+import { verifyAdminToken, type AdminEnv } from './admin'
 
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -190,4 +191,45 @@ export async function handleIntrospect(request: Request, env: IdentityEnv): Prom
   if (!canon || canon.status === 'merged') return json({ valid: false })
 
   return json({ valid: true, accountId: canon.id, status: canon.status })
+}
+
+/**
+ * `POST /admin/merge { fromAccountId, intoAccountId, dryRun, reason?, confirmNonce? }`
+ * — the operator-driven counterpart to the login ghost-fold, for merges a
+ * session can't infer on its own (e.g. "these two accounts are the same
+ * person on two different devices, confirmed IRL"). Gated by a SEPARATE
+ * admin step-up token (`verifyAdminToken` — `aud='vgames-admin'`, signed by
+ * `ADMIN_JWT_SECRET`, never the player-facing `JWT_SECRET`).
+ *
+ * A real merge (`dryRun:false`) additionally requires a non-empty
+ * `confirmNonce`: the intended flow is dry-run first (review `retagCounts` /
+ * `selfPlayFlags` with a human), THEN resubmit with `dryRun:false` +
+ * `confirmNonce` as the explicit "I looked at the dry-run and this is
+ * correct" acknowledgment. Missing it on a real merge is a 400, not a 401 —
+ * the caller is authenticated, just missing the confirmation step.
+ */
+export async function handleAdminMerge(request: Request, env: IdentityEnv & AdminEnv): Promise<Response> {
+  const admin = await verifyAdminToken(request, env)
+  if (!admin) return json({ error: 'unauthorized' }, 401)
+
+  let body: { fromAccountId?: unknown; intoAccountId?: unknown; dryRun?: unknown; reason?: unknown; confirmNonce?: unknown }
+  try {
+    body = (await request.json()) as typeof body
+  } catch {
+    return json({ error: 'bad_json' }, 400)
+  }
+
+  const fromAccountId = String(body.fromAccountId ?? '')
+  const intoAccountId = String(body.intoAccountId ?? '')
+  if (!fromAccountId || !intoAccountId) return json({ error: 'missing_ids' }, 400)
+
+  const dryRun = body.dryRun === true
+  if (!dryRun) {
+    const confirmNonce = String(body.confirmNonce ?? '')
+    if (!confirmNonce) return json({ error: 'confirm_required' }, 400)
+  }
+  const reason = typeof body.reason === 'string' ? body.reason : ''
+
+  const result = await mergeAccounts(env.DB, fromAccountId, intoAccountId, 'admin:vijay', reason, { dryRun })
+  return json(result)
 }

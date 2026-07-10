@@ -26,6 +26,11 @@ export interface Env {
    *  prod via `[vars]` or `wrangler secret put CLIENT_ORIGIN`. Unset only in
    *  local dev, where CORS falls back to a permissive `*`. See `src/cors.ts`. */
   CLIENT_ORIGIN?: string
+  /** VGames identity admin step-up secret (`/admin/merge` only) — deliberately
+   *  SEPARATE from JWT_SECRET so a leaked/compromised player token can never
+   *  authorize an account merge. Unset in prod until an admin merge is needed;
+   *  see wrangler.toml. See `src/identity/admin.ts`. */
+  ADMIN_JWT_SECRET?: string
 }
 
 function json(data: unknown, status = 200): Response {
