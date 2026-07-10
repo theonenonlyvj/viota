@@ -8,9 +8,10 @@ import { requireCanonicalAccount, type IdentityEnv } from './authctx'
 import { hashPassword, verifyPassword, needsRehash } from './pbkdf2'
 import { validateUsername, validatePassword } from './username'
 import { hashCredential } from '../d1/accounts'
-import { upsertDevice } from '../d1/devices'
+import { upsertDevice, findAccountByDevice } from '../d1/devices'
 import { signVGamesToken, verifyAnyToken } from '../jwt'
 import { canonical } from './canonical'
+import { mergeAccounts } from './merge'
 
 export function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
@@ -86,10 +87,15 @@ const DUMMY_PHC = 'pbkdf2-sha256$i=600000$AAAAAAAAAAAAAAAAAAAAAA==$AAAAAAAAAAAAA
  * if it's below the target iteration count, resets the fail counter, and
  * mints a fresh `vgames` token off the account's CURRENT `token_epoch`.
  *
- * NOTE: this task (A9) does NOT fold a ghost mapped to `deviceCredential` into
- * the logged-in account — that session-bound ghost-fold is added in A11 (once
- * `mergeAccounts` exists), which only folds the ONE ghost the presented
- * credential maps to, never an arbitrary account.
+ * SESSION-BOUND GHOST-FOLD (A11): if the `deviceCredential` the client just
+ * presented is CURRENTLY mapped to a DIFFERENT account that is still
+ * `status='ghost'`, that ghost's games/devices/external-ids are folded into
+ * the just-logged-in account via `mergeAccounts` — this is exactly the "I've
+ * been playing as a guest on this device/browser, now I'm logging into my
+ * real account from it" moment. Only the ONE ghost the presented credential
+ * maps to is ever folded (never an arbitrary account, and never a ghost some
+ * OTHER device happens to own) — the credential is proof this browser/device
+ * WAS that ghost.
  */
 export async function handleLogin(request: Request, env: IdentityEnv & { JWT_SECRET?: string }): Promise<Response> {
   if (!env.JWT_SECRET) return json({ error: 'server_misconfigured' }, 503)
@@ -126,7 +132,20 @@ export async function handleLogin(request: Request, env: IdentityEnv & { JWT_SEC
 
   const now = Date.now()
   if (deviceCredential) {
-    await upsertDevice(env.DB, await hashCredential(deviceCredential), acc.id, now)
+    const credHash = await hashCredential(deviceCredential)
+    // Session-bound ghost-fold: fold ONLY the ghost this exact credential
+    // currently maps to (device_credentials, or a legacy accounts.credential_hash
+    // hit) — never an arbitrary account. Do this BEFORE re-binding the
+    // credential below, while it still points at the ghost (if any).
+    const legacyOwner = await env.DB.prepare(`SELECT id FROM accounts WHERE credential_hash=?`).bind(credHash).first<{ id: string }>()
+    const priorOwnerId = (await findAccountByDevice(env.DB, credHash)) ?? legacyOwner?.id ?? null
+    if (priorOwnerId && priorOwnerId !== acc.id) {
+      const priorOwner = await env.DB.prepare(`SELECT status FROM accounts WHERE id=?`).bind(priorOwnerId).first<{ status: string }>()
+      if (priorOwner?.status === 'ghost') {
+        await mergeAccounts(env.DB, priorOwnerId, acc.id, 'system:login', 'login-fold')
+      }
+    }
+    await upsertDevice(env.DB, credHash, acc.id, now)
   }
   // Lazy rehash: a successful login is the only time we ever see the
   // plaintext password again, so it's the only opportunity to upgrade a
