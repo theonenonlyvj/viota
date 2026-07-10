@@ -62,3 +62,62 @@ export async function verifyToken(token: string, secret: string): Promise<{ acco
     return null
   }
 }
+
+/**
+ * VGames identity token extension (additive — does NOT change `signToken`/
+ * `verifyToken` above, which viota's own live auth stays pinned to).
+ *
+ * New `vgames`/`vgames-web` iss/aud + an additive `epoch` claim (bumped on
+ * credential change/merge so a stolen-but-superseded token stops verifying —
+ * see `identity/authctx.ts`) + `status`. `verifyAnyToken` accepts BOTH the
+ * legacy `viota`/`viota-web` tokens `/auth/quick` still mints and these new
+ * `vgames`/`vgames-web` tokens, so a legacy session never breaks. TTL is 1h
+ * (shorter than the legacy 24h) since epoch-checked tokens are cheap to renew.
+ */
+const VGAMES_ISS = 'vgames'
+const VGAMES_AUD = 'vgames-web'
+const VG_TTL_SECONDS = 60 * 60 // 1h
+
+export async function signVGamesToken(
+  p: { accountId: string; status: string; epoch: number },
+  secret: string,
+  opts: { iss?: string; aud?: string; now?: number } = {},
+): Promise<string> {
+  const iat = Math.floor((opts.now ?? Date.now()) / 1000)
+  return new SignJWT({ status: p.status, epoch: p.epoch })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(p.accountId)
+    .setIssuer(opts.iss ?? VGAMES_ISS)
+    .setAudience(opts.aud ?? VGAMES_AUD)
+    .setIssuedAt(iat)
+    .setExpirationTime(iat + VG_TTL_SECONDS)
+    .sign(keyFor(secret))
+}
+
+/**
+ * Verify a token that may be EITHER a legacy viota token or a new vgames
+ * token, and return its claims — never throws. `epoch`/`status` are
+ * `undefined` for a legacy token (it never carried them); callers treat an
+ * absent epoch as 0 (no staleness check possible/needed for legacy sessions).
+ */
+export async function verifyAnyToken(
+  token: string,
+  secret: string,
+): Promise<{ accountId: string; status?: string; epoch?: number } | null> {
+  try {
+    const { payload } = await jwtVerify(token, keyFor(secret), {
+      algorithms: ['HS256'],
+      issuer: [VGAMES_ISS, ISSUER],
+      audience: [VGAMES_AUD, AUDIENCE],
+    })
+    const sub = payload.sub
+    if (typeof sub !== 'string' || sub.length === 0) return null
+    return {
+      accountId: sub,
+      status: typeof payload.status === 'string' ? payload.status : undefined,
+      epoch: typeof payload.epoch === 'number' ? payload.epoch : undefined,
+    }
+  } catch {
+    return null
+  }
+}
