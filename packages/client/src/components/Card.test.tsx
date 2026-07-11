@@ -42,3 +42,34 @@ test('glow prop on wild card applies purple boxShadow', () => {
   const el = container.firstChild as HTMLElement
   expect(el.style.boxShadow).toContain('#c084fc')
 })
+
+test('rotation prop counter-rotates the card so it stays upright', () => {
+  const card: CardType = { kind: 'regular', color: 'red', shape: 'circle', number: 3 }
+  const { container } = render(<Card card={card} rotation={90} />)
+  const el = container.firstChild as HTMLElement
+  expect(el.style.transform).toContain('rotate(-90deg)')
+})
+
+test('rotation prop counter-rotates at 180 and 270 too', () => {
+  const card: CardType = { kind: 'regular', color: 'blue', shape: 'square', number: 5 }
+  const r180 = render(<Card card={card} rotation={180} />)
+  expect((r180.container.firstChild as HTMLElement).style.transform).toContain('rotate(-180deg)')
+  r180.unmount()
+  const r270 = render(<Card card={card} rotation={270} />)
+  expect((r270.container.firstChild as HTMLElement).style.transform).toContain('rotate(-270deg)')
+})
+
+test('no rotation prop (or 0) leaves the card unrotated', () => {
+  const card: CardType = { kind: 'regular', color: 'green', shape: 'plus', number: 1 }
+  const { container } = render(<Card card={card} />)
+  const el = container.firstChild as HTMLElement
+  expect(el.style.transform).not.toContain('rotate(-90deg)')
+  expect(el.style.transform).not.toContain('rotate(-180deg)')
+  expect(el.style.transform).not.toContain('rotate(-270deg)')
+})
+
+test('rotation counter-rotates a wild card too', () => {
+  const { container } = render(<Card card={{ kind: 'wild' }} rotation={270} />)
+  const el = container.firstChild as HTMLElement
+  expect(el.style.transform).toContain('rotate(-270deg)')
+})

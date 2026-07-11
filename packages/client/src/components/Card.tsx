@@ -24,9 +24,17 @@ type Props = {
   selected?: boolean
   glow?: 'purple'
   onClick?: () => void
+  /**
+   * Current board rotation (deg) this card is being rendered under. The card
+   * counter-rotates by `-rotation` so its shape+number stay upright/readable
+   * regardless of the board's orientation — position still rides the rotated
+   * board layout (handled by the parent), only the card's own content spins
+   * back. Always a 90deg multiple, so the card stays axis-aligned.
+   */
+  rotation?: number
 }
 
-export default function Card({ card, selected = false, glow, onClick }: Props) {
+export default function Card({ card, selected = false, glow, onClick, rotation = 0 }: Props) {
   let shadow = '0 2px 8px rgba(0,0,0,0.4)'
   if (glow === 'purple') {
     shadow = '0 0 0 2.5px #c084fc, 0 0 14px rgba(192,132,252,0.4)'
@@ -46,6 +54,7 @@ export default function Card({ card, selected = false, glow, onClick }: Props) {
     position: 'relative',
     cursor: onClick ? 'pointer' : 'default',
     flexShrink: 0,
+    transform: rotation ? `rotate(${-rotation}deg)` : undefined,
   }
 
   if (card.kind === 'wild') {
