@@ -4,6 +4,20 @@ import { useGameStore } from '../store/gameStore'
 import Cell from './Cell'
 
 const CELL_SIZE = 64
+const ROTATION_STORAGE_KEY = 'viota_board_rotation'
+
+/** Restore a persisted board rotation; falls back to 0 for missing/invalid values. */
+function loadStoredRotation(): number {
+  let raw: string | null = null
+  try {
+    raw = localStorage.getItem(ROTATION_STORAGE_KEY)
+  } catch {
+    return 0
+  }
+  const n = raw === null ? NaN : parseInt(raw, 10)
+  if (!Number.isFinite(n) || n % 90 !== 0) return 0
+  return ((n % 360) + 360) % 360
+}
 
 export type BoardHandle = {
   zoomIn: () => void
@@ -31,7 +45,7 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
   const [panX, setPanX] = useState(400)
   const [panY, setPanY] = useState(250)
   const [zoom, setZoom] = useState(1)
-  const [rotation, setRotation] = useState(0)
+  const [rotation, setRotation] = useState(loadStoredRotation)
   const dragging = useRef(false)
   const lastMouse = useRef({ x: 0, y: 0 })
 
@@ -61,6 +75,14 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
     return () => obs.disconnect()
   }, [])
 
+  useEffect(() => {
+    try {
+      localStorage.setItem(ROTATION_STORAGE_KEY, String(rotation))
+    } catch {
+      // best-effort persistence; ignore (e.g. storage disabled/full)
+    }
+  }, [rotation])
+
   const allPositions = [
     ...[...grid.keys()].map(k => fromKey(k)),
     ...staged.map(p => p.position),
@@ -72,24 +94,41 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
   const validSet = new Set(validPositions.map(p => posKey(p)))
 
   const autofit = useCallback(() => {
+    // Preserves the current rotation (no setRotation here) — autofit only
+    // re-centers/re-zooms; it must not undo the user's chosen orientation.
     if (allPositions.length === 0) {
       setPanX(dims.width / 2)
       setPanY(dims.height / 2)
       setZoom(1)
-      setRotation(0)
       return
     }
     const boardW = (maxX - minX + 1) * CELL_SIZE
     const boardH = (maxY - minY + 1) * CELL_SIZE
-    const fitZoom = Math.min(dims.width / boardW, dims.height / boardH, 2.0)
+    // The container transform is `translate(pan) scale(zoom) rotate(rotation)`
+    // (transformOrigin 0,0), applied to inner (unrotated) board coordinates as
+    // pan + rotate(point) * zoom. At 90/270 the board's on-screen bounding box
+    // has its width/height swapped relative to its unrotated layout, so the
+    // fit-zoom calc must swap dims against boardW/boardH too.
+    const swapped = rotation % 180 !== 0
+    const fitZoom = Math.min(
+      dims.width / (swapped ? boardH : boardW),
+      dims.height / (swapped ? boardW : boardH),
+      2.0
+    )
     const clampedZoom = Math.max(fitZoom, 0.5)
     const centerX = ((minX + maxX + 1) / 2) * CELL_SIZE
     const centerY = ((minY + maxY + 1) / 2) * CELL_SIZE
-    setPanX(dims.width / 2 - centerX * clampedZoom)
-    setPanY(dims.height / 2 - centerY * clampedZoom)
+    // Rotate the board's (unrotated-coordinate) center the same way the CSS
+    // transform rotates it, then choose pan so that rotated center lands on
+    // the viewport center — i.e. rotate about the board's center instead of
+    // the (0,0) origin, without having to change transformOrigin.
+    const theta = (rotation * Math.PI) / 180
+    const rotatedCenterX = centerX * Math.cos(theta) - centerY * Math.sin(theta)
+    const rotatedCenterY = centerX * Math.sin(theta) + centerY * Math.cos(theta)
+    setPanX(dims.width / 2 - rotatedCenterX * clampedZoom)
+    setPanY(dims.height / 2 - rotatedCenterY * clampedZoom)
     setZoom(clampedZoom)
-    setRotation(0)
-  }, [dims, minX, maxX, minY, maxY, allPositions.length])
+  }, [dims, minX, maxX, minY, maxY, allPositions.length, rotation])
 
   useImperativeHandle(ref, () => ({
     zoomIn: () => setZoom(z => Math.min(2.0, z + 0.25)),
@@ -134,17 +173,17 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
 
       let cell: React.ReactNode
       if (stagedCard) {
-        cell = <Cell variant="staged" card={stagedCard} onUnstage={() => unstageCard({ x, y })} />
+        cell = <Cell variant="staged" card={stagedCard} onUnstage={() => unstageCard({ x, y })} rotation={rotation} />
       } else if (placedCard) {
         const isWild = placedCard.kind === 'wild'
         const isHumanTurn = turnIndex === humanIndex && (phase === 'idle' || phase === 'placing')
         const isTargeted = recycleTarget && posKey(recycleTarget) === key
         if (isTargeted) {
-          cell = <Cell variant="wild-targeted" card={placedCard} />
+          cell = <Cell variant="wild-targeted" card={placedCard} rotation={rotation} />
         } else if (isWild && isHumanTurn) {
-          cell = <Cell variant="wild" card={placedCard} onRecycle={() => startRecycle({ x, y })} />
+          cell = <Cell variant="wild" card={placedCard} onRecycle={() => startRecycle({ x, y })} rotation={rotation} />
         } else {
-          cell = <Cell variant="placed" card={placedCard} />
+          cell = <Cell variant="placed" card={placedCard} rotation={rotation} />
         }
       } else if (isValid) {
         cell = <Cell variant="valid" onPlace={() => placeCard({ x, y })} />
@@ -186,11 +225,14 @@ const Board = forwardRef<BoardHandle>((_, ref) => {
           Score preview: <span style={{ color: '#fff', fontWeight: 'bold' }}>+{previewScore.total}</span>
         </div>
       )}
-      <div style={{
-        position: 'absolute', left: 0, top: 0,
-        transform: `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation}deg)`,
-        transformOrigin: '0 0',
-      }}>
+      <div
+        data-testid="board-rotation-layer"
+        style={{
+          position: 'absolute', left: 0, top: 0,
+          transform: `translate(${panX}px, ${panY}px) scale(${zoom}) rotate(${rotation}deg)`,
+          transformOrigin: '0 0',
+        }}
+      >
         {cells}
       </div>
     </div>
