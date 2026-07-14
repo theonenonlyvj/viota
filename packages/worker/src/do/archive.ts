@@ -1,4 +1,6 @@
 import type { MoveRow, SeatRow } from './storage'
+import { computeSeatStats } from '../stats/computeSeatStats'
+import { opponentKindFor } from '../stats/opponentKind'
 
 /**
  * D1 archive write-through (must-fix #8 — the Cloudflare Queue is NOT used).
@@ -133,9 +135,25 @@ export type GameEnd = {
   endedAt: number
   lastActivityAt: number
   finalScores: number[]
+  /** DO-local seat rows (owner_type), for `opponent_kind` classification +
+   *  deciding which seats get a stats blob. Optional so a caller with no
+   *  per-seat data (e.g. an older direct `flushGameEnd` call) still works —
+   *  it just means no seat is written as 'human', so only `final_score` is
+   *  updated (today's behavior, unchanged). */
+  seats?: SeatRow[]
+  /** The game's non-reverted move log (any seat), for `computeSeatStats`.
+   *  Optional for the same backward-compat reason as `seats`. */
+  moves?: MoveRow[]
 }
 
-/** Finalize the archive game row (status/outcome/winner/ended) + per-seat scores. */
+/**
+ * Finalize the archive game row (status/outcome/winner/ended) + per-seat
+ * scores. For each HUMAN seat (per `end.seats`) also derives + writes
+ * `result` (win/draw/loss from `winnerSeat`), `opponent_kind`, and a
+ * `computeSeatStats` JSON blob from `end.moves` — the v1 stats/leaderboards
+ * data (spec §3/§4). Non-human seats (or callers that omit `seats`/`moves`)
+ * keep the original final_score-only update.
+ */
 export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEnd): Promise<void> {
   await db
     .prepare(
@@ -146,9 +164,29 @@ export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEn
     .bind(end.status, end.outcome, end.winnerSeat, end.endedAt, end.lastActivityAt, gameUuid)
     .run()
 
-  const stmts = end.finalScores.map((score, seat) =>
-    db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat),
-  )
+  const seats = end.seats ?? []
+  const moves = end.moves ?? []
+  // gameStart proxies off the earliest archived move (no extra D1 round-trip
+  // to read the games.created_at row) — a min() over `created_at` rather than
+  // moves[0] to stay correct even if the log isn't already sorted.
+  const gameStart = moves.length ? Math.min(...moves.map((m) => m.created_at)) : end.endedAt
+
+  const stmts = end.finalScores.map((score, seat) => {
+    const seatRow = seats.find((s) => s.seat_index === seat)
+    if (seatRow && seatRow.owner_type === 'human') {
+      const result = seat === end.winnerSeat ? 'win' : end.winnerSeat === null ? 'draw' : 'loss'
+      const opponentKind = opponentKindFor(seats, seat)
+      const stats = JSON.stringify(computeSeatStats(moves, seat, score, gameStart, end.endedAt))
+      return db
+        .prepare(
+          `UPDATE game_players
+             SET final_score = ?, result = ?, opponent_kind = ?, stats = ?
+           WHERE game_uuid = ? AND seat_index = ?`,
+        )
+        .bind(score, result, opponentKind, stats, gameUuid, seat)
+    }
+    return db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat)
+  })
   if (stmts.length) await db.batch(stmts)
 }
 
