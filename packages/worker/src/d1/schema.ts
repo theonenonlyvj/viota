@@ -68,6 +68,7 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
      stats          TEXT,
      ai_move_count  INTEGER NOT NULL DEFAULT 0,
      total_moves    INTEGER NOT NULL DEFAULT 0,
+     opponent_kind  TEXT,
      PRIMARY KEY (game_uuid, seat_index)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_game_players_account ON game_players (account_id)`,
