@@ -1,0 +1,7 @@
+{
+  "name": "viota-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Local visual-check harness (Playwright). Not part of the pnpm workspace.",
+  "devDependencies": { "playwright": "^1" }
+}

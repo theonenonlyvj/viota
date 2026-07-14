@@ -131,6 +131,14 @@ test('autofit centers a rotated board (board center maps to the viewport center)
   // default test dims are 800x500 (ResizeObserver is a no-op stub in jsdom)
   expect(screenX).toBeCloseTo(400, 1)
   expect(screenY).toBeCloseTo(250, 1)
+
+  // Pin the fit-zoom VALUE (not just pan-consistency): at 90deg the rotated board is
+  // boardH wide x boardW tall on screen, so the fit budget MUST swap dims. Without the
+  // swap a tall/narrow board over-zooms and clips off-screen — and the pan-only checks
+  // above wouldn't catch it (they use whatever zoom autofit chose). This is the guard.
+  const boardW = (maxX - minX + 1) * CELL_SIZE // 448
+  const boardH = (maxY - minY + 1) * CELL_SIZE // 320
+  expect(zoom).toBeCloseTo(Math.min(800 / boardH, 500 / boardW, 2.0), 3)
 })
 
 test('rotation is restored from localStorage on mount', () => {
