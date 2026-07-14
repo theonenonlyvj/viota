@@ -48,3 +48,9 @@ test('leaderboard link navigates to /leaderboard', async () => {
   await userEvent.click(screen.getByRole('button', { name: /^leaderboard$/i }))
   expect(navigate).toHaveBeenCalledWith('/leaderboard')
 })
+
+test('your stats link navigates to /stats', async () => {
+  renderHome()
+  await userEvent.click(screen.getByRole('button', { name: /^your stats$/i }))
+  expect(navigate).toHaveBeenCalledWith('/stats')
+})

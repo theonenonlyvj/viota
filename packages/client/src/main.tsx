@@ -11,6 +11,7 @@ import Room from './pages/Room'
 import OnlineGame from './pages/OnlineGame'
 import Practice from './pages/Practice'
 import Leaderboard from './pages/Leaderboard'
+import YourStats from './pages/YourStats'
 
 export function AppRoutes() {
   return (
@@ -21,6 +22,7 @@ export function AppRoutes() {
         <Route path="/lobby/:code" element={<Room />} />
         <Route path="/practice" element={<Practice />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/stats" element={<YourStats />} />
       </Route>
       <Route path="/game/local" element={<Game />} />
       <Route path="/game/online" element={<OnlineGame />} />
