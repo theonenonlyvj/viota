@@ -82,6 +82,17 @@ describe('POST /auth/quick', () => {
     expect(row?.origin_game).toBe('jaipur')
   })
 
+  it('mints origin_game for Vikipedia quick accounts', async () => {
+    const { accountId } = (await (await authQuick(mintCredential(), 'WikiGhost', 'vikipedia')).json()) as {
+      accountId: string
+    }
+    const row = await DB()
+      .prepare('SELECT origin_game FROM accounts WHERE id = ?')
+      .bind(accountId)
+      .first<{ origin_game: string }>()
+    expect(row?.origin_game).toBe('vikipedia')
+  })
+
   it('defaults origin_game to "iota" when `game` is absent (existing viota clients) or unrecognized', async () => {
     const { accountId: noneId } = (await (await authQuick(mintCredential(), 'NoGame')).json()) as {
       accountId: string
