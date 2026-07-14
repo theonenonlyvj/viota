@@ -7,6 +7,7 @@ import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
 import { handleLeaderboard } from './stats/leaderboard'
+import { handleMeStats } from './stats/me-stats'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
 
@@ -101,6 +102,12 @@ async function route(request: Request, env: Env): Promise<Response> {
     // just omitted without a valid token).
     if (request.method === 'GET' && path === '/leaderboard') {
       return handleLeaderboard(request, env)
+    }
+
+    // GET /me/stats -> Phase 5 (Task 10): the requester's personal aggregate
+    // (Bearer required, canonicalized account).
+    if (request.method === 'GET' && path === '/me/stats') {
+      return handleMeStats(request, env)
     }
 
     // GET /my-games -> the authed caller's resumable (waiting/active) games with
