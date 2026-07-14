@@ -44,6 +44,9 @@ async function seedGame(
     bestPlay?: number
     endedAt: number
     status?: 'completed' | 'stalemate'
+    /** Defaults to 0/0 (schema default) — a normal, fully-human-played seat. */
+    totalMoves?: number
+    aiMoveCount?: number
   },
 ): Promise<void> {
   const gameUuid = `lb-${crypto.randomUUID()}`
@@ -63,10 +66,10 @@ async function seedGame(
   })
   await DB()
     .prepare(
-      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats)
-       VALUES (?, 0, ?, 'human', ?, ?, ?, ?)`,
+      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats, total_moves, ai_move_count)
+       VALUES (?, 0, ?, 'human', ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats)
+    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats, opts.totalMoves ?? 0, opts.aiMoveCount ?? 0)
     .run()
 }
 
@@ -165,6 +168,26 @@ describe('GET /leaderboard', () => {
     const wins = await fetchBoard('wins-ai')
     expect(winrate.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 0.8, games: 5 })
     expect(wins.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 4, games: 5 })
+  })
+
+  it('excludes an AI-takeover-majority game (ai_move_count*2 > total_moves) from wins-friends/winrate-friends', async () => {
+    const acct = `lb-takeover-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Takeover Victim' })
+    let t0 = Date.now()
+    // 4 normal wins + 1 normal loss, human played every move -> meets the
+    // 5-game winrate floor cleanly: wins-friends=4, winrate-friends=0.8.
+    for (const result of ['win', 'win', 'win', 'win', 'loss'] as const) {
+      await seedGame(acct, { opponentKind: 'human', result, finalScore: 10, endedAt: t0++, totalMoves: 4, aiMoveCount: 1 })
+    }
+    // A 6th game, also a "win", but the AI played the majority of the seat's
+    // moves (ai_move_count*2 > total_moves) while the owner was away — must
+    // be excluded, so it must NOT move wins-friends to 5 or winrate to 5/6.
+    await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 10, endedAt: t0++, totalMoves: 4, aiMoveCount: 3 })
+
+    const wins = await fetchBoard('wins-friends')
+    const winrate = await fetchBoard('winrate-friends')
+    expect(wins.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 4, games: 5 })
+    expect(winrate.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 0.8, games: 5 })
   })
 
   it('bestplay: max json_extract(stats, bestPlay) across ALL opponent kinds', async () => {

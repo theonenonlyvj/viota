@@ -1,13 +1,15 @@
 import { requireCanonicalAccount, type IdentityEnv } from '../identity/authctx'
+import { AI_TAKEOVER_GUARD } from './aiTakeoverGuard'
 import { longestWinStreak } from './streak'
 
 /**
  * Phase 5 — GET /me/stats (Task 10, Bearer). The requester's personal
  * aggregate across their own `game_players` rows — same base scope as the
  * leaderboard boards (game_type='iota', a terminal status with a resolvable
- * winner, owner_type='human'), PLUS `result IS NOT NULL` so a game whose
- * archive/backfill write hasn't landed yet (a brief async window right after
- * game-end) is simply not counted yet rather than half-counted.
+ * winner, owner_type='human', the AI-takeover guard), PLUS `result IS NOT
+ * NULL` so a game whose archive/backfill write hasn't landed yet (a brief
+ * async window right after game-end) is simply not counted yet rather than
+ * half-counted.
  */
 
 function json(data: unknown, status = 200): Response {
@@ -118,7 +120,7 @@ export async function handleMeStats(request: Request, env: IdentityEnv): Promise
      JOIN games g ON g.game_uuid = gp.game_uuid
      WHERE g.game_type = 'iota' AND g.status IN ('completed','stalemate')
        AND gp.owner_type = 'human' AND gp.result IS NOT NULL
-       AND gp.account_id = ?`,
+       AND gp.account_id = ? AND ${AI_TAKEOVER_GUARD}`,
   )
     .bind(auth.accountId)
     .all<MeStatsSourceRow>()

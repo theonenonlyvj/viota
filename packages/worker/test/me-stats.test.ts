@@ -37,6 +37,9 @@ async function seedGame(
     createdAt: number
     endedAt: number
     status?: 'completed' | 'stalemate'
+    /** Defaults to 0/0 (schema default) — a normal, fully-human-played seat. */
+    totalMoves?: number
+    aiMoveCount?: number
   },
 ): Promise<void> {
   const gameUuid = `ms-${crypto.randomUUID()}`
@@ -56,10 +59,10 @@ async function seedGame(
   })
   await DB()
     .prepare(
-      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats)
-       VALUES (?, 0, ?, 'human', ?, ?, ?, ?)`,
+      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats, total_moves, ai_move_count)
+       VALUES (?, 0, ?, 'human', ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats)
+    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats, opts.totalMoves ?? 0, opts.aiMoveCount ?? 0)
     .run()
 }
 
@@ -128,5 +131,42 @@ describe('GET /me/stats', () => {
     const { body } = await meStats(me.token)
     expect(body.games).toBe(1)
     expect(body.bestGame).toBe(9) // NOT other's 999
+  })
+
+  it('excludes a game where the AI played the majority of the seat\'s moves (owner stepped away, ai_move_count*2 > total_moves)', async () => {
+    const { token, accountId } = await quickAccount('Takeover Victim')
+    const t0 = Date.now()
+    // Normal win: human played every move.
+    await seedGame(accountId, {
+      opponentKind: 'human',
+      result: 'win',
+      finalScore: 10,
+      bestPlay: 8,
+      durationMs: 1_000,
+      playerCount: 2,
+      createdAt: t0,
+      endedAt: t0,
+      totalMoves: 4,
+      aiMoveCount: 1,
+    })
+    // AI-takeover win: AI played 3 of 4 moves (ai_move_count*2=6 > total_moves=4)
+    // while the owner was away -> must not count on the account's stats.
+    await seedGame(accountId, {
+      opponentKind: 'human',
+      result: 'win',
+      finalScore: 99,
+      bestPlay: 99,
+      durationMs: 5_000,
+      playerCount: 2,
+      createdAt: t0 + 1,
+      endedAt: t0 + 1,
+      totalMoves: 4,
+      aiMoveCount: 3,
+    })
+
+    const { body } = await meStats(token)
+    expect(body.games).toBe(1) // NOT 2
+    expect(body.vsFriends).toMatchObject({ games: 1, wins: 1 }) // NOT games:2, wins:2
+    expect(body.bestGame).toBe(10) // NOT the takeover game's 99
   })
 })
