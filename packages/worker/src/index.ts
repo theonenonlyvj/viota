@@ -8,6 +8,7 @@ import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
 import { handleLeaderboard } from './stats/leaderboard'
 import { handleMeStats } from './stats/me-stats'
+import { handleGamesReport } from './stats/report'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
 
@@ -108,6 +109,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     // (Bearer required, canonicalized account).
     if (request.method === 'GET' && path === '/me/stats') {
       return handleMeStats(request, env)
+    }
+
+    // POST /games/report -> Phase 4 (Task 7): upload a FINISHED local
+    // (client-only, vs-AI) game so it counts toward stats/leaderboards. The
+    // client sends raw moves/scores; the server re-derives stats (Bearer
+    // required — the reporter must own a human seat in the game).
+    if (request.method === 'POST' && path === '/games/report') {
+      return handleGamesReport(request, env)
     }
 
     // GET /my-games -> the authed caller's resumable (waiting/active) games with
