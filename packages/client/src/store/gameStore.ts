@@ -3,6 +3,8 @@ import { posKey, validateWildRecycle, type Card, type RegularCard, type GameStat
 import { initGame, applyPlay, applyPass, applyWildRecycle, computeValidPositions, computePreviewScore } from '../gameLogic'
 import type { ClientView as NetView, ClientMove, MovePayload, PostMoveResult, SyncResponse } from '../net/protocol'
 import type { OnlineClient } from '../net/online'
+import { serverUrl } from '../net/config'
+import { reportLocalGame, type LocalMove } from '../net/reportGame'
 
 type Phase = 'idle' | 'placing' | 'ai-thinking' | 'game-over'
 
@@ -28,6 +30,15 @@ type GameStore = {
   recycleTarget: Position | null
   recycleValidCards: Card[]
   mode: 'local' | 'online'
+  // --- Local-game reporting (Task 8: POST /games/report) ---
+  /** Minted once at local-game start; the idempotency key for /games/report. */
+  localGameId: string | null
+  /** The full move log for the CURRENT local game (every seat) — accumulated
+   *  as moves commit, since a local game never touches the server mid-play. */
+  localMoves: LocalMove[]
+  localStartedAt: number | null
+  /** Guards `reportLocalIfFinished` so a finished local game is ever reported ONCE. */
+  localReported: boolean
   // --- New HTTP-first online state (Phase 6) ---
   gameId: string | null
   mySeat: number
@@ -56,6 +67,10 @@ type GameStore = {
   startRecycle(position: Position): void
   cancelRecycle(): void
   confirmRecycle(replacement: RegularCard): void
+  /** Fires reportLocalGame ONCE for the current local game, iff mode==='local'
+   *  and it has actually finished. Safe to call redundantly (no-ops after the
+   *  first successful guard flip). */
+  reportLocalIfFinished(): void
   // --- New HTTP-first online actions (Phase 6) ---
   startOnline(gameId: string, mySeat: number): void
   setOnlineClient(net: OnlineClient | null): void
@@ -70,6 +85,13 @@ type GameStore = {
   doVeto(): void
   handleAiCover(seat: number): void
   dismissAiCover(): void
+}
+
+/** Append one committed LOCAL move to the game's move log (immutable — returns
+ *  a NEW array, per zustand convention). `created_at` is stamped here so every
+ *  caller doesn't have to. */
+function appendLocalMove(moves: LocalMove[], entry: Omit<LocalMove, 'created_at'>): LocalMove[] {
+  return [...moves, { ...entry, created_at: Date.now() }]
 }
 
 function postToWorker(worker: Worker, state: GameState, playerIndex: number, difficulty: Difficulty) {
@@ -110,6 +132,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   recycleTarget: null,
   recycleValidCards: [],
   mode: 'local',
+  localGameId: null,
+  localMoves: [],
+  localStartedAt: null,
+  localReported: false,
   gameId: null,
   mySeat: 0,
   moveIndex: 0,
@@ -138,6 +164,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       recycleTarget: null,
       recycleValidCards: [],
       mode: 'local',
+      localGameId: crypto.randomUUID(),
+      localMoves: [],
+      localStartedAt: Date.now(),
+      localReported: false,
     })
   },
 
@@ -176,14 +206,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   confirmPlay() {
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker, staged } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker, staged, mode, localMoves } = get()
     if (staged.length === 0) return
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPlay(gs, humanIndex, staged)
     if ('error' in result) return
     const { newState, scoreResult, gameOver } = result
+    const nextLocalMoves =
+      mode === 'local'
+        ? appendLocalMove(localMoves, { seat_index: humanIndex, type: 'play', payload: JSON.stringify({ type: 'play', placements: staged }), score_delta: scoreResult.total })
+        : localMoves
     if (gameOver) {
-      set({ ...newState, staged: [], selectedCard: null, validPositions: [], previewScore: null, lastScoreResult: scoreResult, phase: 'game-over' })
+      set({ ...newState, staged: [], selectedCard: null, validPositions: [], previewScore: null, lastScoreResult: scoreResult, phase: 'game-over', localMoves: nextLocalMoves })
+      get().reportLocalIfFinished()
       return
     }
     const nextTurn = newState.turnIndex
@@ -196,18 +231,24 @@ export const useGameStore = create<GameStore>((set, get) => ({
       previewScore: null,
       lastScoreResult: scoreResult,
       phase: isNextAI ? 'ai-thinking' : 'idle',
+      localMoves: nextLocalMoves,
     })
     if (isNextAI && _worker) postToWorker(_worker, newState, nextTurn, difficulty)
   },
 
   pass(trades, tradeOrder) {
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker, mode, localMoves } = get()
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyPass(gs, humanIndex, trades, tradeOrder)
     if ('error' in result) return
     const { newState, gameOver } = result
+    const nextLocalMoves =
+      mode === 'local'
+        ? appendLocalMove(localMoves, { seat_index: humanIndex, type: 'pass', payload: JSON.stringify({ type: 'pass', trades, tradeOrder }), score_delta: 0 })
+        : localMoves
     if (gameOver) {
-      set({ ...newState, staged: [], selectedCard: null, validPositions: [], previewScore: null, phase: 'game-over' })
+      set({ ...newState, staged: [], selectedCard: null, validPositions: [], previewScore: null, phase: 'game-over', localMoves: nextLocalMoves })
+      get().reportLocalIfFinished()
       return
     }
     const nextTurn = newState.turnIndex
@@ -219,16 +260,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
       validPositions: [],
       previewScore: null,
       phase: isNextAI ? 'ai-thinking' : 'idle',
+      localMoves: nextLocalMoves,
     })
     if (isNextAI && _worker) postToWorker(_worker, newState, nextTurn, difficulty)
   },
 
   recycleWild(wildPosition, replacement) {
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, mode, localMoves } = get()
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyWildRecycle(gs, humanIndex, wildPosition, replacement)
     if ('error' in result) return
-    set({ ...result.newState, validPositions: [], previewScore: null })
+    // wild_recycle never advances the turn or ends the game (see gameLogic's
+    // applyWildRecycle) — just log it; no gameOver/report check needed here.
+    const nextLocalMoves =
+      mode === 'local'
+        ? appendLocalMove(localMoves, { seat_index: humanIndex, type: 'wild_recycle', payload: JSON.stringify({ type: 'wild_recycle', wildPosition, replacement }), score_delta: 0 })
+        : localMoves
+    set({ ...result.newState, validPositions: [], previewScore: null, localMoves: nextLocalMoves })
   },
 
   setWorker(worker) {
@@ -236,28 +284,36 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   handleWorkerMessage(move) {
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, difficulty, _worker, mode, localMoves } = get()
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     let newState: GameState
     let gameOver = false
+    let scoreDelta = 0
     if (move.type === 'play') {
       const result = applyPlay(gs, turnIndex, move.placements)
       if ('error' in result) return
       newState = result.newState
       gameOver = result.gameOver
+      scoreDelta = result.scoreResult.total
     } else {
       const result = applyPass(gs, turnIndex, move.trades, move.tradeOrder)
       if ('error' in result) return
       newState = result.newState
       gameOver = result.gameOver
     }
+    // The AI's OWN move (seat = turnIndex, not humanIndex) — logged for
+    // completeness (mirrors the online archive logging every seat), though
+    // only the reporting human seat's own moves feed its derived stats.
+    const nextLocalMoves =
+      mode === 'local' ? appendLocalMove(localMoves, { seat_index: turnIndex, type: move.type, payload: JSON.stringify(move), score_delta: scoreDelta }) : localMoves
     if (gameOver) {
-      set({ ...newState, phase: 'game-over' })
+      set({ ...newState, phase: 'game-over', localMoves: nextLocalMoves })
+      get().reportLocalIfFinished()
       return
     }
     const nextTurn = newState.turnIndex
     const isNextAI = nextTurn !== humanIndex
-    set({ ...newState, phase: isNextAI ? 'ai-thinking' : 'idle' })
+    set({ ...newState, phase: isNextAI ? 'ai-thinking' : 'idle', localMoves: nextLocalMoves })
     if (isNextAI && _worker) {
       const w = _worker
       setTimeout(() => {
@@ -288,12 +344,40 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   confirmRecycle(replacement) {
-    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, recycleTarget } = get()
+    const { grid, hands, drawPile, scores, turnIndex, playedCards, humanIndex, recycleTarget, mode, localMoves } = get()
     if (!recycleTarget) return
     const gs: GameState = { grid, hands, drawPile, scores, turnIndex, playedCards, consecutivePasses: get().consecutivePasses, finished: get().finished }
     const result = applyWildRecycle(gs, humanIndex, recycleTarget, replacement)
     if ('error' in result) return
-    set({ ...result.newState, recycleTarget: null, recycleValidCards: [], validPositions: [], previewScore: null })
+    // wild_recycle never advances the turn or ends the game (see gameLogic's
+    // applyWildRecycle) — just log it; no gameOver/report check needed here.
+    const nextLocalMoves =
+      mode === 'local'
+        ? appendLocalMove(localMoves, { seat_index: humanIndex, type: 'wild_recycle', payload: JSON.stringify({ type: 'wild_recycle', wildPosition: recycleTarget, replacement }), score_delta: 0 })
+        : localMoves
+    set({ ...result.newState, recycleTarget: null, recycleValidCards: [], validPositions: [], previewScore: null, localMoves: nextLocalMoves })
+  },
+
+  /**
+   * Uploads the just-finished LOCAL game via `reportLocalGame` (Task 8) —
+   * fire-and-forget, called from confirmPlay/pass/handleWorkerMessage's
+   * gameOver branches. `localReported` guards it so a finished local game is
+   * ever reported ONCE, no matter how this gets re-entered. Never touches
+   * online state/behavior (no-ops unless mode==='local').
+   */
+  reportLocalIfFinished() {
+    const s = get()
+    if (s.mode !== 'local' || !s.finished || s.localReported) return
+    set({ localReported: true })
+    void reportLocalGame(serverUrl(), {
+      clientGameId: s.localGameId ?? crypto.randomUUID(),
+      playerCount: s.playerCount,
+      humanSeat: s.humanIndex,
+      scores: s.scores,
+      moves: s.localMoves,
+      startedAt: s.localStartedAt ?? Date.now(),
+      endedAt: Date.now(),
+    })
   },
 
   // === New HTTP-first online mode (Phase 6) ===============================
