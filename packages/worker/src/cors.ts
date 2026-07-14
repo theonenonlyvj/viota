@@ -16,9 +16,11 @@
 
 /** The env surface CORS reads — a subset of the Worker Env (easy to fake). */
 export interface CorsEnv {
-  /** The exact allowed browser origin (the Pages URL). Set in prod via a
-   *  `[vars]` entry or `wrangler secret put CLIENT_ORIGIN`. Unset only in local
-   *  dev, where we fall back to a permissive `*`. */
+  /** Comma-separated allowlist of EXACT browser origins that may call this
+   *  worker (one per game client — e.g.
+   *  `https://viota.pages.dev,https://vjaipur-game.onrender.com`). A single
+   *  origin is just a list of one. Set in prod via `wrangler secret put
+   *  CLIENT_ORIGIN`. Unset only in local dev, where we fall back to `*`. */
   CLIENT_ORIGIN?: string
 }
 
@@ -54,8 +56,18 @@ export function corsHeaders(request: Request, env: CorsEnv): Record<string, stri
 
   if (!configured) {
     headers['Access-Control-Allow-Origin'] = '*'
-  } else if (origin !== null && origin === configured) {
-    headers['Access-Control-Allow-Origin'] = origin
+  } else if (origin !== null) {
+    // CLIENT_ORIGIN is a comma-separated allowlist of EXACT origins — one per
+    // game client that calls this shared identity worker from a browser (viota
+    // Pages, vjaipur Render, future games). We reflect the request Origin only
+    // on EXACT string membership: never a substring/suffix match (so
+    // `viota.pages.dev.evil.com` never matches), never an arbitrary origin,
+    // never `*` in prod. `Vary: Origin` (above) keeps a shared cache from
+    // handing one allowed origin's header to another.
+    const allowed = configured.split(',').map((o) => o.trim()).filter(Boolean)
+    if (allowed.includes(origin)) {
+      headers['Access-Control-Allow-Origin'] = origin
+    }
   }
   // configured + foreign origin → deliberately omit Allow-Origin (block).
 

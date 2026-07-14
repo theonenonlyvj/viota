@@ -45,6 +45,35 @@ describe('corsHeaders (the pinned-origin policy)', () => {
   })
 })
 
+// --- Multi-origin allowlist (shared identity worker: viota + vjaipur + …) ----
+describe('corsHeaders (comma-separated allowlist)', () => {
+  const LIST = 'https://viota.pages.dev,https://vjaipur-game.onrender.com'
+
+  it('reflects ANY exact member of the list', () => {
+    for (const o of ['https://viota.pages.dev', 'https://vjaipur-game.onrender.com']) {
+      const h = corsHeaders(req({ origin: o }), { CLIENT_ORIGIN: LIST })
+      expect(h['Access-Control-Allow-Origin']).toBe(o)
+    }
+  })
+
+  it('tolerates whitespace around list entries', () => {
+    const h = corsHeaders(req({ origin: 'https://vjaipur-game.onrender.com' }), {
+      CLIENT_ORIGIN: 'https://viota.pages.dev ,  https://vjaipur-game.onrender.com',
+    })
+    expect(h['Access-Control-Allow-Origin']).toBe('https://vjaipur-game.onrender.com')
+  })
+
+  it('still blocks a foreign origin absent from the list', () => {
+    const h = corsHeaders(req({ origin: 'https://evil.example.com' }), { CLIENT_ORIGIN: LIST })
+    expect('Access-Control-Allow-Origin' in h).toBe(false)
+  })
+
+  it('still rejects a suffix attack against a list member', () => {
+    const h = corsHeaders(req({ origin: 'https://vjaipur-game.onrender.com.evil.com' }), { CLIENT_ORIGIN: LIST })
+    expect('Access-Control-Allow-Origin' in h).toBe(false)
+  })
+})
+
 describe('handlePreflight', () => {
   it('answers an OPTIONS preflight with 204 + the CORS headers', () => {
     const res = handlePreflight(req({ origin: ORIGIN, method: 'OPTIONS' }), { CLIENT_ORIGIN: ORIGIN })!
