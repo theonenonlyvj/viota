@@ -121,7 +121,7 @@ export async function handleGamesReport(request: Request, env: IdentityEnv): Pro
   const seatsForKind: ArchiveSeatRow[] = body.players.map((p) => ({ seat_index: p.seat, owner_type: p.ownerType }))
   const movesForStats: ArchiveMoveRow[] = body.moves.map((m) => ({ ...m, by_ai: false }))
 
-  const db = (env as unknown as { DB: D1Database }).DB
+  const db = env.DB
 
   await db
     .prepare(
