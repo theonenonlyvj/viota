@@ -1,4 +1,5 @@
 import { requireCanonicalAccount, type IdentityEnv } from '../identity/authctx'
+import { AI_TAKEOVER_GUARD } from './aiTakeoverGuard'
 import { longestWinStreak } from './streak'
 
 /**
@@ -10,14 +11,16 @@ import { longestWinStreak } from './streak'
  * Every board is scoped to `game_type='iota'`, a TERMINAL status that has a
  * resolvable winner (`completed` or `stalemate` — 'stalemate' still resolves
  * by score, it is not a forced draw; see game-do.ts's archiveTick), and
- * `owner_type='human'` (AI seats never carry result/opponent_kind/stats).
+ * `owner_type='human'` (AI seats never carry result/opponent_kind/stats), and
+ * the AI-takeover guard (`AI_TAKEOVER_GUARD`) — a human seat the AI covered
+ * and won for while the owner was away doesn't count either.
  */
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-const BASE_WHERE = `g.game_type = 'iota' AND g.status IN ('completed','stalemate') AND gp.owner_type = 'human'`
+const BASE_WHERE = `g.game_type = 'iota' AND g.status IN ('completed','stalemate') AND gp.owner_type = 'human' AND ${AI_TAKEOVER_GUARD}`
 
 /** Win-rate boards require this many QUALIFYING games before a rate is
  *  meaningful enough to rank (spec §2: "min-games floor, e.g. 5"). Applies
