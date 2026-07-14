@@ -49,6 +49,7 @@ export default function Home() {
         <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
           <button type="button" onClick={() => navigate('/practice')} style={navLink}>practice</button>
           <button type="button" onClick={() => navigate('/leaderboard')} style={navLink}>leaderboard</button>
+          <button type="button" onClick={() => navigate('/stats')} style={navLink}>your stats</button>
           <button type="button" onClick={() => setHowToOpen(true)} style={navLink}>how to play</button>
         </div>
       </div>
