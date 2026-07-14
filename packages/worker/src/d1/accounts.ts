@@ -48,7 +48,7 @@ export function sanitizeDisplayName(raw: unknown): string {
  *  `/auth/quick`. Purely additive/cosmetic (analytics only — never consulted
  *  by auth or leaderboards): an unrecognized or absent value falls back to
  *  the long-standing default, 'iota'. */
-const ORIGIN_GAMES = ['iota', 'jaipur', 'vikipedia'] as const
+const ORIGIN_GAMES = ['iota', 'jaipur', 'vwiki-race'] as const
 export type OriginGame = (typeof ORIGIN_GAMES)[number]
 export function isValidOriginGame(v: unknown): v is OriginGame {
   return typeof v === 'string' && (ORIGIN_GAMES as readonly string[]).includes(v)
