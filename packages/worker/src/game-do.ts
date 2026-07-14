@@ -249,7 +249,10 @@ export class GameDO extends DurableObject<Env> {
       await flushGameEnd(db, meta.game_uuid, {
         status: meta.status,
         outcome: meta.status,
-        winnerSeat: meta.status === 'completed' ? winnerSeatOf(scores) : null,
+        // Iota rule: a stalemate ending (all-pass rounds) still resolves by high
+        // score, just like a completed game — it is NOT a forced draw. Only
+        // truly winner-less terminal statuses (e.g. abandoned) stay null.
+        winnerSeat: meta.status === 'completed' || meta.status === 'stalemate' ? winnerSeatOf(scores) : null,
         endedAt: now,
         lastActivityAt: now,
         finalScores: scores,

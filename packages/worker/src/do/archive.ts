@@ -177,13 +177,19 @@ export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEn
       const result = seat === end.winnerSeat ? 'win' : end.winnerSeat === null ? 'draw' : 'loss'
       const opponentKind = opponentKindFor(seats, seat)
       const stats = JSON.stringify(computeSeatStats(moves, seat, score, gameStart, end.endedAt))
+      // P1 columns (must-fix #3): total_moves/ai_move_count feed v_leaderboard's
+      // AI-takeover guard (`total_moves = 0 OR ai_move_count*2 <= total_moves`),
+      // which is a permanent no-op unless these are actually written here.
+      const mine = moves.filter((m) => m.seat_index === seat)
+      const totalMoves = mine.length
+      const aiMoveCount = mine.filter((m) => m.by_ai).length
       return db
         .prepare(
           `UPDATE game_players
-             SET final_score = ?, result = ?, opponent_kind = ?, stats = ?
+             SET final_score = ?, result = ?, opponent_kind = ?, stats = ?, total_moves = ?, ai_move_count = ?
            WHERE game_uuid = ? AND seat_index = ?`,
         )
-        .bind(score, result, opponentKind, stats, gameUuid, seat)
+        .bind(score, result, opponentKind, stats, totalMoves, aiMoveCount, gameUuid, seat)
     }
     return db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat)
   })
@@ -240,10 +246,13 @@ export async function listResumableGames(db: D1Database, accountId: string): Pro
   return results
 }
 
-/** argmax of a score vector (first max on ties), or null when empty. */
+/** argmax of a score vector, or null when empty OR when >1 seat shares the max
+ *  (a tie — CRITICAL: must archive as a draw, never pick the lowest seat index
+ *  as an arbitrary winner). */
 export function winnerSeatOf(scores: number[]): number | null {
   if (scores.length === 0) return null
   let best = 0
   for (let i = 1; i < scores.length; i++) if ((scores[i] ?? 0) > (scores[best] ?? 0)) best = i
-  return best
+  const max = scores[best] ?? 0
+  return scores.filter((s) => (s ?? 0) === max).length > 1 ? null : best
 }

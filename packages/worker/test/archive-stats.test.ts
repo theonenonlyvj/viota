@@ -71,12 +71,25 @@ describe('game-end archive: result/opponent_kind/stats', () => {
 
     const rows = (
       await DB()
-        .prepare('SELECT seat_index, result, opponent_kind, stats, final_score FROM game_players WHERE game_uuid = ? ORDER BY seat_index')
+        .prepare(
+          'SELECT seat_index, result, opponent_kind, stats, final_score, total_moves, ai_move_count FROM game_players WHERE game_uuid = ? ORDER BY seat_index',
+        )
         .bind(gameUuid)
-        .all<{ seat_index: number; result: string | null; opponent_kind: string | null; stats: string | null; final_score: number }>()
+        .all<{
+          seat_index: number
+          result: string | null
+          opponent_kind: string | null
+          stats: string | null
+          final_score: number
+          total_moves: number | null
+          ai_move_count: number | null
+        }>()
     ).results
     expect(rows.length).toBe(2)
 
+    // winnerSeatOf resolves to exactly one seat here (never null) because this
+    // fixture's scripted scores are NOT tied — a genuine tie is covered
+    // separately below (must archive as a draw for every seat, not a winner).
     let winners = 0
     for (const row of rows) {
       expect(row.result).not.toBeNull()
@@ -90,17 +103,89 @@ describe('game-end archive: result/opponent_kind/stats', () => {
       expect(typeof stats.points).toBe('number')
       expect(typeof stats.bestPlay).toBe('number')
       expect(stats.points).toBe(row.final_score) // points echoes the archived final_score
+
+      // P1 columns (must-fix #3): populated at game-end from the seat's own
+      // moves, not left at their schema default of 0 — the v_leaderboard
+      // AI-takeover guard (`total_moves = 0 OR ai_move_count*2 <= total_moves`)
+      // is a no-op unless these are actually written.
+      expect(row.total_moves).not.toBeNull()
+      expect(row.ai_move_count).not.toBeNull()
+      expect(row.ai_move_count).toBe(0) // no AI takeover in this fixture — 0 is correct, not a default-value artifact
     }
-    // winnerSeatOf always resolves to exactly one seat (never null) once status
-    // is 'completed' — this holds regardless of the actual scripted scores.
     expect(winners).toBe(1)
 
-    // Seat 0's script is exactly 2 'play' moves (steps A and D) -> plays:2.
+    // Seat 0's script is exactly 2 'play' moves (steps A and D) -> plays:2 and
+    // total_moves:2 (no AI in this fixture, so every move is the seat's own).
     const seat0 = JSON.parse(rows.find((r) => r.seat_index === 0)!.stats!)
     expect(seat0.plays).toBe(2)
-    // Seat 1's script is exactly 1 wild_recycle (step B) + 1 pass (step C).
+    expect(rows.find((r) => r.seat_index === 0)!.total_moves).toBe(2)
+    // Seat 1's script is exactly 1 wild_recycle (step B) + 1 pass (step C) -> total_moves:2.
     const seat1 = JSON.parse(rows.find((r) => r.seat_index === 1)!.stats!)
     expect(seat1.wildsRecycled).toBe(1)
     expect(seat1.passes).toBe(1)
+    expect(rows.find((r) => r.seat_index === 1)!.total_moves).toBe(2)
+  })
+
+  it('a TIE game archives EVERY human seat as a draw — never a lowest-seat win/loss (must-fix #1)', async () => {
+    const stub = stubFor(`archive-stats-tie-${crypto.randomUUID()}`)
+    const gameUuid = `stats-tie-${crypto.randomUUID()}`
+
+    await runInDurableObject(stub, async (i: any, state: any) => {
+      const sql = state.storage.sql as SqlLike
+      const { repo, game } = seedScriptedGame(sql)
+      repo.putMeta({ ...repo.getMeta()!, game_uuid: gameUuid }) // unique D1 PK
+
+      // Drive the full deterministic script for real, exactly like the sibling
+      // test above, so both seats accrue real moves through the authoritative
+      // pipeline — then force the FINAL scores to a tie (the script's natural
+      // scores are not tied, so this is the only way to exercise the tie path
+      // end-to-end without a second bespoke script).
+      for (const s of game.script) {
+        const res = state.storage.transactionSync(() =>
+          applyAndPersist(sql, repo, {
+            seatIndex: s.seatIndex,
+            move: s.move,
+            clientMoveId: crypto.randomUUID(),
+            accountId: s.accountId,
+          }),
+        )
+        expect('ok' in res && res.ok).toBe(true)
+      }
+      await i.flushOutbox(Date.now())
+
+      state.storage.transactionSync(() => {
+        repo.putMeta({ ...repo.getMeta()!, status: 'completed' })
+        repo.putSnapshot({ ...repo.getSnapshot()!, scores: [15, 15] }) // TIE
+      })
+
+      await DB().prepare('INSERT INTO games (game_uuid, status, player_count) VALUES (?, ?, ?)').bind(gameUuid, 'active', 2).run()
+      await DB().batch([
+        DB()
+          .prepare('INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type) VALUES (?, ?, ?, ?)')
+          .bind(gameUuid, 0, 'acct-0', 'human'),
+        DB()
+          .prepare('INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type) VALUES (?, ?, ?, ?)')
+          .bind(gameUuid, 1, 'acct-1', 'human'),
+      ])
+
+      await i.archiveTick(Date.now())
+    })
+
+    const rows = (
+      await DB()
+        .prepare('SELECT seat_index, result FROM game_players WHERE game_uuid = ? ORDER BY seat_index')
+        .bind(gameUuid)
+        .all<{ seat_index: number; result: string | null }>()
+    ).results
+    expect(rows.length).toBe(2)
+    for (const row of rows) {
+      expect(row.result).toBe('draw') // NEVER 'win'/'loss' on a tie
+    }
+
+    const g = await DB()
+      .prepare('SELECT winner_seat FROM games WHERE game_uuid = ?')
+      .bind(gameUuid)
+      .first<{ winner_seat: number | null }>()
+    expect(g!.winner_seat).toBeNull()
   })
 })
