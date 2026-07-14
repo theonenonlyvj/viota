@@ -1,6 +1,5 @@
 import type { MoveRow, SeatRow } from './storage'
-import { computeSeatStats } from '../stats/computeSeatStats'
-import { opponentKindFor } from '../stats/opponentKind'
+import { deriveSeatArchiveFields, gameStartOf } from '../stats/deriveSeatArchive'
 
 /**
  * D1 archive write-through (must-fix #8 — the Cloudflare Queue is NOT used).
@@ -167,29 +166,25 @@ export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEn
   const seats = end.seats ?? []
   const moves = end.moves ?? []
   // gameStart proxies off the earliest archived move (no extra D1 round-trip
-  // to read the games.created_at row) — a min() over `created_at` rather than
-  // moves[0] to stay correct even if the log isn't already sorted.
-  const gameStart = moves.length ? Math.min(...moves.map((m) => m.created_at)) : end.endedAt
+  // to read the games.created_at row) — shared with backfillStats (Phase 3)
+  // so a live-archived and a backfilled game derive IDENTICAL stats.
+  const gameStart = gameStartOf(moves, end.endedAt)
 
   const stmts = end.finalScores.map((score, seat) => {
     const seatRow = seats.find((s) => s.seat_index === seat)
     if (seatRow && seatRow.owner_type === 'human') {
-      const result = seat === end.winnerSeat ? 'win' : end.winnerSeat === null ? 'draw' : 'loss'
-      const opponentKind = opponentKindFor(seats, seat)
-      const stats = JSON.stringify(computeSeatStats(moves, seat, score, gameStart, end.endedAt))
-      // P1 columns (must-fix #3): total_moves/ai_move_count feed v_leaderboard's
-      // AI-takeover guard (`total_moves = 0 OR ai_move_count*2 <= total_moves`),
-      // which is a permanent no-op unless these are actually written here.
-      const mine = moves.filter((m) => m.seat_index === seat)
-      const totalMoves = mine.length
-      const aiMoveCount = mine.filter((m) => m.by_ai).length
+      // Shared with backfillStats (src/stats/backfill.ts) — see
+      // deriveSeatArchive.ts's docstring: this is the ONE place win/loss/draw
+      // + opponent_kind + stats + move-count derivation lives, so the live
+      // and backfilled paths can never drift apart.
+      const fields = deriveSeatArchiveFields(seats, moves, seat, score, end.winnerSeat, gameStart, end.endedAt)
       return db
         .prepare(
           `UPDATE game_players
              SET final_score = ?, result = ?, opponent_kind = ?, stats = ?, total_moves = ?, ai_move_count = ?
            WHERE game_uuid = ? AND seat_index = ?`,
         )
-        .bind(score, result, opponentKind, stats, totalMoves, aiMoveCount, gameUuid, seat)
+        .bind(score, fields.result, fields.opponentKind, fields.stats, fields.totalMoves, fields.aiMoveCount, gameUuid, seat)
     }
     return db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat)
   })
