@@ -5,6 +5,7 @@ import { handleClaim } from './d1/claim'
 import { handleSetCredentials, handleLogin, handleIntrospect, handleAdminMerge } from './identity/routes'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
+import { handleAdminBackfillStats } from './stats/backfill'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
 
@@ -79,6 +80,14 @@ async function route(request: Request, env: Env): Promise<Response> {
     // player-facing JWT_SECRET.
     if (request.method === 'POST' && path === '/admin/merge') {
       return handleAdminMerge(request, env)
+    }
+
+    // POST /admin/backfill-stats -> Phase 3: one-time (idempotent) backfill of
+    // result/opponent_kind/stats/total_moves/ai_move_count for online games
+    // archived before Task 5 started populating them live. Same admin
+    // step-up gate as /admin/merge (ADMIN_JWT_SECRET, aud:'vgames-admin').
+    if (request.method === 'POST' && path === '/admin/backfill-stats') {
+      return handleAdminBackfillStats(request, env)
     }
 
     // POST /claim -> claim device ghost games into the authed account.
