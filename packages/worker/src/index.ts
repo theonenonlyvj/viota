@@ -6,6 +6,7 @@ import { handleSetCredentials, handleLogin, handleIntrospect, handleAdminMerge }
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
+import { handleLeaderboard } from './stats/leaderboard'
 import { ABANDON_MS, WAITING_ABANDON_MS } from './do/constants'
 import { handlePreflight, withCors } from './cors'
 
@@ -93,6 +94,13 @@ async function route(request: Request, env: Env): Promise<Response> {
     // POST /claim -> claim device ghost games into the authed account.
     if (request.method === 'POST' && path === '/claim') {
       return handleClaim(request, env)
+    }
+
+    // GET /leaderboard?game=iota&board=<key> -> Phase 5 (Task 9): ranked board
+    // rows + the caller's own rank (Bearer optional — public read, `me` is
+    // just omitted without a valid token).
+    if (request.method === 'GET' && path === '/leaderboard') {
+      return handleLeaderboard(request, env)
     }
 
     // GET /my-games -> the authed caller's resumable (waiting/active) games with
