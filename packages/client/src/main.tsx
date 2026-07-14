@@ -10,6 +10,7 @@ import Lobby from './pages/Lobby'
 import Room from './pages/Room'
 import OnlineGame from './pages/OnlineGame'
 import Practice from './pages/Practice'
+import Leaderboard from './pages/Leaderboard'
 
 export function AppRoutes() {
   return (
@@ -19,6 +20,7 @@ export function AppRoutes() {
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/lobby/:code" element={<Room />} />
         <Route path="/practice" element={<Practice />} />
+        <Route path="/leaderboard" element={<Leaderboard />} />
       </Route>
       <Route path="/game/local" element={<Game />} />
       <Route path="/game/online" element={<OnlineGame />} />
