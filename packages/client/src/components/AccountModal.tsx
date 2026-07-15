@@ -88,6 +88,7 @@ export default function AccountModal({
         if (result.ok) {
           setUsername(usernameInput)
           setSuccess(`Claimed "${usernameInput}" — log in with it on any device.`)
+          setPasswordInput('') // don't leave the plaintext password lingering in component state
           onIdentityChange?.()
         } else {
           setError(claimErrorText(result.error))
@@ -97,6 +98,7 @@ export default function AccountModal({
         if (result.ok) {
           setUsername(usernameInput)
           setSuccess(`Logged in as ${usernameInput}.`)
+          setPasswordInput('') // don't leave the plaintext password lingering in component state
           onIdentityChange?.()
         } else {
           setError(loginErrorText(result.error))
