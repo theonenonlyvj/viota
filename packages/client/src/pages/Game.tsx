@@ -7,7 +7,10 @@ import TopBar from '../components/TopBar'
 import PassTradeModal from '../components/PassTradeModal'
 import SettingsMenu from '../components/SettingsMenu'
 import HowToPlayModal from '../components/HowToPlayModal'
+import AccountModal from '../components/AccountModal'
+import Button from '../components/Button'
 import { recordGhostGame } from '../net/ghost'
+import { getUsername } from '../net/identity'
 import type { Move } from '@viota/engine'
 
 export default function Game() {
@@ -16,6 +19,10 @@ export default function Game() {
   const [showPassModal, setShowPassModal] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [howToOpen, setHowToOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  // Bumped by AccountModal's onIdentityChange so the game-over claim CTA
+  // re-reads getUsername() (a plain localStorage read) and hides once claimed.
+  const [, setIdentityVersion] = useState(0)
 
   const grid = useGameStore(s => s.grid)
 
@@ -176,6 +183,11 @@ export default function Game() {
             >
               Play Again
             </button>
+            {!getUsername() && (
+              <div style={{ marginTop: 12 }}>
+                <Button variant="primary" onClick={() => setAccountOpen(true)}>Save this win — claim your name</Button>
+              </div>
+            )}
             <button
               onClick={() => navigate('/')}
               style={{
@@ -188,6 +200,12 @@ export default function Game() {
           </div>
         </div>
       )}
+
+      <AccountModal
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        onIdentityChange={() => setIdentityVersion((v) => v + 1)}
+      />
     </div>
   )
 }

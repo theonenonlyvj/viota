@@ -5,6 +5,10 @@ import { MemoryRouter } from 'react-router-dom'
 import Game from './Game'
 import { useGameStore } from '../store/gameStore'
 
+vi.mock('../components/AccountModal', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="account-modal" /> : null),
+}))
+
 class MockWorker {
   onmessage: ((e: MessageEvent) => void) | null = null
   postMessage = vi.fn()
@@ -18,6 +22,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  localStorage.clear()
 })
 
 test('renders without crashing', () => {
@@ -41,4 +46,25 @@ test('game-over state shows Play Again button', () => {
   render(<MemoryRouter><Game /></MemoryRouter>)
   act(() => useGameStore.setState({ phase: 'game-over' }))
   expect(screen.getByText('Play Again')).toBeInTheDocument()
+})
+
+test('game-over shows the claim CTA when no username is claimed', () => {
+  render(<MemoryRouter><Game /></MemoryRouter>)
+  act(() => useGameStore.setState({ phase: 'game-over' }))
+  expect(screen.getByRole('button', { name: /save this win/i })).toBeInTheDocument()
+})
+
+test('game-over hides the claim CTA once a username is claimed', () => {
+  localStorage.setItem('viota_username', 'vijay')
+  render(<MemoryRouter><Game /></MemoryRouter>)
+  act(() => useGameStore.setState({ phase: 'game-over' }))
+  expect(screen.queryByRole('button', { name: /save this win/i })).toBeNull()
+})
+
+test('clicking the game-over claim CTA opens the account modal', async () => {
+  render(<MemoryRouter><Game /></MemoryRouter>)
+  act(() => useGameStore.setState({ phase: 'game-over' }))
+  expect(screen.queryByTestId('account-modal')).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: /save this win/i }))
+  expect(screen.getByTestId('account-modal')).toBeInTheDocument()
 })

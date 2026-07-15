@@ -6,6 +6,12 @@ const navigate = vi.fn()
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<any>()), useNavigate: () => navigate }))
 vi.mock('../net/config', () => ({ serverUrl: () => 'http://sv' }))
 vi.mock('../net/leaderboard', () => ({ fetchMyStats: vi.fn() }))
+vi.mock('../components/AccountModal', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="account-modal" /> : null),
+}))
+
+let mockUsername: string | null = null
+vi.mock('../net/identity', () => ({ getUsername: () => mockUsername }))
 
 import { fetchMyStats } from '../net/leaderboard'
 import YourStats from './YourStats'
@@ -26,7 +32,7 @@ function renderPage() {
   return render(<MemoryRouter><YourStats /></MemoryRouter>)
 }
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => { vi.clearAllMocks(); mockUsername = null })
 afterEach(() => vi.clearAllMocks())
 
 test('shows a loading state before the fetch resolves', () => {
@@ -89,4 +95,45 @@ test('Back to menu navigates home', async () => {
   await screen.findByTestId('stats-overview')
   fireEvent.click(screen.getByRole('button', { name: /back to menu/i }))
   expect(navigate).toHaveBeenCalledWith('/')
+})
+
+test('shows the claim CTA in the empty state when no username is claimed', async () => {
+  mockUsername = null
+  ;(fetchMyStats as any).mockResolvedValue(null)
+  renderPage()
+  await screen.findByText(/no stats yet/i)
+  expect(screen.getByRole('button', { name: /claim your name/i })).toBeInTheDocument()
+})
+
+test('shows the claim CTA in the populated state when no username is claimed', async () => {
+  mockUsername = null
+  ;(fetchMyStats as any).mockResolvedValue(STATS)
+  renderPage()
+  await screen.findByTestId('stats-overview')
+  expect(screen.getByRole('button', { name: /claim your name/i })).toBeInTheDocument()
+})
+
+test('hides the claim CTA in both empty and populated states once a username is claimed', async () => {
+  mockUsername = 'vijay'
+
+  ;(fetchMyStats as any).mockResolvedValue(null)
+  const { unmount } = renderPage()
+  await screen.findByText(/no stats yet/i)
+  expect(screen.queryByRole('button', { name: /claim your name/i })).toBeNull()
+  unmount()
+
+  ;(fetchMyStats as any).mockResolvedValue(STATS)
+  renderPage()
+  await screen.findByTestId('stats-overview')
+  expect(screen.queryByRole('button', { name: /claim your name/i })).toBeNull()
+})
+
+test('clicking the claim CTA mounts the account modal', async () => {
+  mockUsername = null
+  ;(fetchMyStats as any).mockResolvedValue(STATS)
+  renderPage()
+  await screen.findByTestId('stats-overview')
+  expect(screen.queryByTestId('account-modal')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /claim your name/i }))
+  expect(screen.getByTestId('account-modal')).toBeInTheDocument()
 })
