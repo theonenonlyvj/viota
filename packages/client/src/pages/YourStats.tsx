@@ -87,13 +87,13 @@ export default function YourStats() {
         <div className="panel">
           <p style={{ color: 'var(--text-body)', fontSize: 14, lineHeight: 1.5 }}>
             No stats yet. Play an online game — with friends or vs AI — and it starts tracking automatically,
-            even before you claim a username.
+            even before you create an account.
           </p>
           <div style={{ marginTop: 18, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Button variant="primary" onClick={() => navigate('/lobby')}>Play with friends</Button>
             {!getUsername() && (
               <Button variant="secondary" onClick={() => setAccountOpen(true)}>
-                Claim your name — save your stats across devices
+                Create account — save your stats
               </Button>
             )}
           </div>
@@ -105,7 +105,7 @@ export default function YourStats() {
           {!getUsername() && (
             <div style={{ display: 'flex' }}>
               <Button variant="primary" onClick={() => setAccountOpen(true)}>
-                Claim your name — save your stats across devices
+                Create account — save your stats
               </Button>
             </div>
           )}

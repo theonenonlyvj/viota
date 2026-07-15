@@ -102,7 +102,7 @@ test('shows the claim CTA in the empty state when no username is claimed', async
   ;(fetchMyStats as any).mockResolvedValue(null)
   renderPage()
   await screen.findByText(/no stats yet/i)
-  expect(screen.getByRole('button', { name: /claim your name/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
 })
 
 test('shows the claim CTA in the populated state when no username is claimed', async () => {
@@ -110,7 +110,7 @@ test('shows the claim CTA in the populated state when no username is claimed', a
   ;(fetchMyStats as any).mockResolvedValue(STATS)
   renderPage()
   await screen.findByTestId('stats-overview')
-  expect(screen.getByRole('button', { name: /claim your name/i })).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: /create account/i })).toBeInTheDocument()
 })
 
 test('hides the claim CTA in both empty and populated states once a username is claimed', async () => {
@@ -119,13 +119,13 @@ test('hides the claim CTA in both empty and populated states once a username is 
   ;(fetchMyStats as any).mockResolvedValue(null)
   const { unmount } = renderPage()
   await screen.findByText(/no stats yet/i)
-  expect(screen.queryByRole('button', { name: /claim your name/i })).toBeNull()
+  expect(screen.queryByRole('button', { name: /create account/i })).toBeNull()
   unmount()
 
   ;(fetchMyStats as any).mockResolvedValue(STATS)
   renderPage()
   await screen.findByTestId('stats-overview')
-  expect(screen.queryByRole('button', { name: /claim your name/i })).toBeNull()
+  expect(screen.queryByRole('button', { name: /create account/i })).toBeNull()
 })
 
 test('clicking the claim CTA mounts the account modal', async () => {
@@ -134,6 +134,6 @@ test('clicking the claim CTA mounts the account modal', async () => {
   renderPage()
   await screen.findByTestId('stats-overview')
   expect(screen.queryByTestId('account-modal')).toBeNull()
-  fireEvent.click(screen.getByRole('button', { name: /claim your name/i }))
+  fireEvent.click(screen.getByRole('button', { name: /create account/i }))
   expect(screen.getByTestId('account-modal')).toBeInTheDocument()
 })
