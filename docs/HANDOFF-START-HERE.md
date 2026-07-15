@@ -1,5 +1,32 @@
 # viota / VGames — START HERE (cold-start handoff, 2026-07-14)
 
+> ## ⚡ 2026-07-15 UPDATE (overnight council + fixes — read before the threads below)
+> Where stale, this block wins over the body below.
+>
+> 1. **The vjaipur cutover SHIPPED (2026-07-13, `51821cb` on vjaipur main, Render-deployed).**
+>    Any "deliberately un-cutover / Thread 4 pending" language below is historical.
+> 2. **Program ground truth moved:** read `../vgames-platform/docs/CURRENT-STATE.md` first, and the
+>    full 2026-07-15 verified critique of accounts/stats/competitiveness at
+>    `../vgames-platform/docs/council/2026-07-15-account-stats-critique.md`. Headline: auth is
+>    (over-)done; the competitive/product layer is the gap; council recommends federated stats
+>    (kill P4 shared-D1 migration) — pending Vijay.
+> 3. **New on viota main (LOCAL commits, NOT pushed — pushing deploys):**
+>    - `d1ead5a` introspect returns displayName + bounded alias set (was found uncommitted from a
+>      prior session; tests verified green, then committed). **vwiki-race's hardening branch
+>      consumes these fields — deploy the viota worker BEFORE vwiki-race, always.**
+>    - `f4afc55` test-toolchain bump (vitest 3→4, pool-workers 0.8→0.18) — independently revertable.
+>    - `95ad816` claim CTAs at high-intent moments (Your Stats both states + local game-over
+>      "Save this win — claim your name"), gated on `!getUsername()`, reusing AccountModal.
+>    - `4531a09` SQL leaderboard views annotated UNUSED at runtime (live boards = TS handlers in
+>      `packages/worker/src/stats/leaderboard.ts`).
+> 4. **Test state:** worker 393/393 (one KNOWN ~1-in-3 flake: `test/e2e.test.ts` ~line 85, the
+>    `quickAuth('Host')` two-accounts e2e — pre-existing, documented, not load-bearing);
+>    client 372/372; `tsc --noEmit` clean.
+> 5. **Known product findings for viota specifically** (see critique appendix): ghost display
+>    names default to bare "Player" (indistinguishable rows on boards); "Best play/Best game"
+>    boards include self-reported local scores (filter/badge/split = Vijay's call); no
+>    head-to-head surface yet (game_players has the data).
+
 You're taking over mid-stream. This is the index of every open thread with its status + exact resume
 pointer. Read this first, then the per-thread doc it points to. Vijay is the user (terse, direct, wants
 structured choices, "show before commit," flags-don't-guess; see his auto-memory).
