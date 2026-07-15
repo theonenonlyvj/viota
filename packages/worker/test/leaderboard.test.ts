@@ -47,12 +47,15 @@ async function seedGame(
     /** Defaults to 0/0 (schema default) — a normal, fully-human-played seat. */
     totalMoves?: number
     aiMoveCount?: number
+    /** Trust tier. Defaults to a verified online game (the common case); pass
+     *  'client_reported' to model a self-reported local game. */
+    source?: 'online_authoritative' | 'client_reported'
   },
 ): Promise<void> {
   const gameUuid = `lb-${crypto.randomUUID()}`
   await DB()
-    .prepare(`INSERT INTO games (game_uuid, status, player_count, ended_at, created_at, game_type) VALUES (?, ?, 2, ?, ?, 'iota')`)
-    .bind(gameUuid, opts.status ?? 'completed', opts.endedAt, opts.endedAt - 1_000)
+    .prepare(`INSERT INTO games (game_uuid, status, player_count, source, ended_at, created_at, game_type) VALUES (?, ?, 2, ?, ?, ?, 'iota')`)
+    .bind(gameUuid, opts.status ?? 'completed', opts.source ?? 'online_authoritative', opts.endedAt, opts.endedAt - 1_000)
     .run()
   const stats = JSON.stringify({
     points: opts.finalScore,
@@ -212,6 +215,36 @@ describe('GET /leaderboard', () => {
 
     const { body } = await fetchBoard('bestgame')
     expect(body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 55, games: 3 })
+  })
+
+  it('score boards (bestplay/bestgame) rank verified ONLINE games only — a self-reported local high score is excluded, but still counts on participation boards', async () => {
+    const mixed = `lb-verif-${crypto.randomUUID()}`
+    await mkAccount(mixed, { displayName: 'Mixed Player' })
+    const t0 = Date.now()
+    // A modest ONLINE (server-verified) game — the legit high score.
+    await seedGame(mixed, { opponentKind: 'ai', result: 'win', finalScore: 30, bestPlay: 20, endedAt: t0, source: 'online_authoritative' })
+    // A HUGE LOCAL self-reported game — must NOT top the score boards.
+    await seedGame(mixed, { opponentKind: 'ai', result: 'win', finalScore: 999, bestPlay: 999, endedAt: t0 + 1, source: 'client_reported' })
+
+    // bestgame/bestplay: the local 999 is excluded — only the online game ranks (games=1).
+    const bestgame = await fetchBoard('bestgame')
+    expect(bestgame.body.rows.find((r: any) => r.accountId === mixed)).toMatchObject({ value: 30, games: 1 })
+    const bestplay = await fetchBoard('bestplay')
+    expect(bestplay.body.rows.find((r: any) => r.accountId === mixed)).toMatchObject({ value: 20, games: 1 })
+
+    // Participation (wins-ai) still counts BOTH games — a local game is a real game played.
+    const winsAi = await fetchBoard('wins-ai')
+    expect(winsAi.body.rows.find((r: any) => r.accountId === mixed)).toMatchObject({ value: 2, games: 2 })
+
+    // An account whose ONLY game is local never appears on a score board at all...
+    const onlyLocal = `lb-onlylocal-${crypto.randomUUID()}`
+    await mkAccount(onlyLocal, { displayName: 'Only Local' })
+    await seedGame(onlyLocal, { opponentKind: 'ai', result: 'win', finalScore: 500, bestPlay: 500, endedAt: t0 + 2, source: 'client_reported' })
+    const bestgame2 = await fetchBoard('bestgame')
+    expect(bestgame2.body.rows.find((r: any) => r.accountId === onlyLocal)).toBeUndefined()
+    // ...but it still shows up on the participation board.
+    const winsAi2 = await fetchBoard('wins-ai')
+    expect(winsAi2.body.rows.find((r: any) => r.accountId === onlyLocal)).toMatchObject({ value: 1, games: 1 })
   })
 
   it('ghosts (no username) appear by display_name; claimed accounts show their username', async () => {

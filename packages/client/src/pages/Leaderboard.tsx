@@ -30,7 +30,7 @@ const SECTIONS: Section[] = [
   },
   {
     testId: 'board-section-high-scores',
-    title: 'High scores',
+    title: 'High scores (online games)',
     boards: [
       { key: 'bestplay', label: 'Best play' },
       { key: 'bestgame', label: 'Best game' },
@@ -47,8 +47,8 @@ const EMPTY_COPY: Record<BoardKey, string> = {
   'streak-friends': 'No win streaks vs friends yet — win two in a row to get on the board.',
   'winrate-ai': 'Nobody has played 5+ games vs AI yet — play some rounds vs AI to appear here.',
   'wins-ai': 'No wins vs AI recorded yet — be the first.',
-  bestplay: 'No plays recorded yet — the first big play takes the crown.',
-  bestgame: 'No games recorded yet — the first finished game takes the crown.',
+  bestplay: 'No online plays recorded yet — the first big play takes the crown.',
+  bestgame: 'No online games recorded yet — the first finished game takes the crown.',
 }
 
 function formatValue(board: BoardKey, value: number): string {

@@ -22,6 +22,16 @@ function json(data: unknown, status = 200): Response {
 
 const BASE_WHERE = `g.game_type = 'iota' AND g.status IN ('completed','stalemate') AND gp.owner_type = 'human' AND ${AI_TAKEOVER_GUARD}`
 
+/** Score-ranked boards (Best play / Best game) rank a SELF-REPORTABLE value —
+ *  a single-device local game's final_score/bestPlay has no independent judge,
+ *  so anyone could top these from an unverified solo game. They therefore count
+ *  SERVER-VERIFIED online games only: `client_reported` (and any unsourced) rows
+ *  are excluded (source is forced server-side — see stats/report.ts +
+ *  do/archive.ts). Participation/outcome boards (wins/winrate/streak) still
+ *  count everything — a self-reported game is a real game played, just not a
+ *  trustworthy high score. */
+const VERIFIED_ONLY = `g.source = 'online_authoritative'`
+
 /** Win-rate boards require this many QUALIFYING games before a rate is
  *  meaningful enough to rank (spec §2: "min-games floor, e.g. 5"). Applies
  *  identically to winrate-friends and winrate-ai — the raw win-COUNT boards
@@ -128,7 +138,9 @@ async function streakFriendsBoard(db: D1Database): Promise<LeaderboardRow[]> {
 }
 
 /** `bestplay` (max stats.bestPlay) / `bestgame` (max final_score) — span ALL
- *  opponent kinds (spec §2: "flashy boards ... span everything"). */
+ *  opponent kinds (spec §2: "flashy boards ... span everything"), but ONLY
+ *  server-verified online games (`VERIFIED_ONLY`): the ranked value is
+ *  self-reportable, so an unverified local game must not top the board. */
 async function statBoard(db: D1Database, kind: 'bestplay' | 'bestgame'): Promise<LeaderboardRow[]> {
   const valueExpr = kind === 'bestplay' ? `CAST(json_extract(gp.stats, '$.bestPlay') AS INTEGER)` : `gp.final_score`
   const guard = kind === 'bestplay' ? `gp.stats IS NOT NULL` : `gp.final_score IS NOT NULL`
@@ -139,7 +151,7 @@ async function statBoard(db: D1Database, kind: 'bestplay' | 'bestgame'): Promise
        FROM game_players gp
        JOIN games g ON g.game_uuid = gp.game_uuid
        JOIN accounts a ON a.id = gp.account_id
-       WHERE ${BASE_WHERE} AND ${guard}
+       WHERE ${BASE_WHERE} AND ${VERIFIED_ONLY} AND ${guard}
        GROUP BY gp.account_id`,
     )
     .all<MaxStatRow>()
