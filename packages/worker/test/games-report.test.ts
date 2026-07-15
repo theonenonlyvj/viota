@@ -96,6 +96,68 @@ describe('POST /games/report', () => {
     expect(status).toBe(403)
   })
 
+  it('403s when a SECOND human seat is forged with a null accountId (fabricated vs-Friends win)', async () => {
+    const { token, accountId } = await quickAccount('Reporter')
+    const clientGameId = `rep-${crypto.randomUUID()}`
+    // Local games are structurally 1 human + N AI seats. A second human seat
+    // (even an "unowned" one) flips opponent_kind to 'human' server-side,
+    // landing a forged win on the ranked vs-Friends leaderboard.
+    const body = buildBody(clientGameId, accountId, {
+      playerCount: 3,
+      players: [
+        { seat: 0, accountId, ownerType: 'human', displayName: 'Reporter' },
+        { seat: 1, ownerType: 'ai', displayName: 'AI 2' },
+        { seat: 2, accountId: null, ownerType: 'human', displayName: 'Forged human' },
+      ],
+    })
+    const { status } = await report(body, token)
+    expect(status).toBe(403)
+
+    const game = await DB().prepare('SELECT * FROM games WHERE game_uuid = ?').bind(clientGameId).first<any>()
+    expect(game).toBeNull()
+    const rows = (await DB().prepare('SELECT * FROM game_players WHERE game_uuid = ?').bind(clientGameId).all<any>()).results
+    expect(rows.length).toBe(0)
+  })
+
+  it('403s when a SECOND human seat is forged with a real victim accountId (fabricated stats on their account)', async () => {
+    const { token, accountId } = await quickAccount('Reporter')
+    const victim = await quickAccount('Victim')
+    const clientGameId = `rep-${crypto.randomUUID()}`
+    const body = buildBody(clientGameId, accountId, {
+      playerCount: 3,
+      players: [
+        { seat: 0, accountId, ownerType: 'human', displayName: 'Reporter' },
+        { seat: 1, ownerType: 'ai', displayName: 'AI 2' },
+        { seat: 2, accountId: victim.accountId, ownerType: 'human', displayName: 'Victim' },
+      ],
+    })
+    const { status } = await report(body, token)
+    expect(status).toBe(403)
+
+    const game = await DB().prepare('SELECT * FROM games WHERE game_uuid = ?').bind(clientGameId).first<any>()
+    expect(game).toBeNull()
+    const rows = (await DB().prepare('SELECT * FROM game_players WHERE game_uuid = ?').bind(clientGameId).all<any>()).results
+    expect(rows.length).toBe(0)
+  })
+
+  it('400s when the body exceeds the sane moves cap (bound the body)', async () => {
+    const { token, accountId } = await quickAccount('Reporter')
+    const clientGameId = `rep-${crypto.randomUUID()}`
+    const hugeMoves = Array.from({ length: 2001 }, (_, i) => ({
+      seat_index: 0,
+      type: 'pass',
+      payload: JSON.stringify({ type: 'pass', trades: [], tradeOrder: [] }),
+      score_delta: 0,
+      created_at: Date.now() + i,
+    }))
+    const body = buildBody(clientGameId, accountId, { moves: hugeMoves })
+    const { status } = await report(body, token)
+    expect(status).toBe(400)
+
+    const game = await DB().prepare('SELECT * FROM games WHERE game_uuid = ?').bind(clientGameId).first<any>()
+    expect(game).toBeNull()
+  })
+
   it('200s, writes a client_reported games row + server-derived game_players, and is idempotent on re-POST', async () => {
     const { token, accountId } = await quickAccount('Reporter')
     const clientGameId = `rep-${crypto.randomUUID()}`
@@ -148,5 +210,46 @@ describe('POST /games/report', () => {
     expect(gamesAfter.length).toBe(1)
     const rowsAfter = (await DB().prepare('SELECT * FROM game_players WHERE game_uuid = ?').bind(clientGameId).all<any>()).results
     expect(rowsAfter.length).toBe(2)
+  })
+
+  it('derives winnerSeat from seats[].finalScore server-side, ignoring a forged body.winnerSeat', async () => {
+    const { token, accountId } = await quickAccount('Reporter')
+    const clientGameId = `rep-${crypto.randomUUID()}`
+    // seat 0 (the reporter) actually LOSES (score 5) but forges winnerSeat: 0
+    // to try to fabricate a win.
+    const body = buildBody(clientGameId, accountId, {
+      winnerSeat: 0,
+      seats: [
+        { seat: 0, finalScore: 5 },
+        { seat: 1, finalScore: 28 },
+      ],
+    })
+    const { status } = await report(body, token)
+    expect(status).toBe(200)
+
+    const game = await DB().prepare('SELECT * FROM games WHERE game_uuid = ?').bind(clientGameId).first<any>()
+    expect(game.winner_seat).toBe(1) // server-derived from actual scores, NOT the forged 0
+
+    const seat0 = await DB()
+      .prepare('SELECT * FROM game_players WHERE game_uuid = ? AND seat_index = 0')
+      .bind(clientGameId)
+      .first<any>()
+    expect(seat0.result).toBe('loss') // true result despite the forged winnerSeat claiming a win
+  })
+
+  it('never writes opponent_kind=human for a client_reported row (structural invariant: exactly one human seat)', async () => {
+    const rows = (
+      await DB()
+        .prepare(
+          `SELECT gp.opponent_kind FROM game_players gp
+           JOIN games g ON g.game_uuid = gp.game_uuid
+           WHERE g.source = 'client_reported' AND gp.opponent_kind IS NOT NULL`,
+        )
+        .all<any>()
+    ).results
+    // Sanity: earlier tests in this file DID accept client_reported rows —
+    // otherwise this assertion would vacuously pass.
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows.every((r: any) => r.opponent_kind !== 'human')).toBe(true)
   })
 })

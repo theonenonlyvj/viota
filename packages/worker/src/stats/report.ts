@@ -1,4 +1,5 @@
 import { requireCanonicalAccount, type IdentityEnv } from '../identity/authctx'
+import { winnerSeatOf } from '../do/archive'
 import { deriveSeatArchiveFields, type ArchiveMoveRow, type ArchiveSeatRow } from './deriveSeatArchive'
 import type { StatMove } from './computeSeatStats'
 
@@ -8,17 +9,26 @@ import type { StatMove } from './computeSeatStats'
  * touch a Durable Object — they run entirely in the browser (Web Worker AI) — so
  * this is the ONLY path that ever archives them.
  *
- * The client sends the raw ingredients (roster + reported final scores/winner +
- * the full move log); the SERVER re-derives result/opponent_kind/stats via the
- * SAME pure helpers the live online archive (do/archive.ts's flushGameEnd) and
- * the backfill (stats/backfill.ts) use — deriveSeatArchiveFields +
- * computeSeatStats + opponentKindFor. There is deliberately no `stats` field in
- * the request body: a client can never hand us a pre-computed stats blob, only
- * the moves it claims happened, from which the SAME derivation the trusted
- * online path uses is re-run. (final_score/winnerSeat are still fundamentally
+ * The client sends the raw ingredients (roster + reported final scores + the
+ * full move log); the SERVER re-derives winnerSeat/result/opponent_kind/stats
+ * via the SAME pure helpers the live online archive (do/archive.ts's
+ * flushGameEnd) and the backfill (stats/backfill.ts) use —
+ * winnerSeatOf + deriveSeatArchiveFields + computeSeatStats + opponentKindFor.
+ * There is deliberately no `stats` field (and, as of the winnerSeat-forgery
+ * fix, no trusted `winnerSeat` field either) in the request body: a client can
+ * never hand us a pre-computed stats blob or a claimed winner, only the
+ * per-seat scores/moves it says happened, from which the SAME derivation the
+ * trusted online path uses is re-run. (final_score is still fundamentally
  * self-reported for a single-device local game with no independent judge —
  * that lower trust tier is exactly why these rows are tagged
  * source='client_reported', kept separate from 'online_authoritative'.)
+ *
+ * Local games are STRUCTURALLY always exactly 1 human seat + N AI seats
+ * (PlayVsAiModal -> startGame never produces anything else), so the handler
+ * requires the reported roster to have exactly one human seat and that it be
+ * the authenticated caller — this both guarantees opponent_kind is always
+ * 'ai' for a client-reported row (never a forged vs-Friends ranked win) and
+ * makes it structurally impossible to write a row onto another account.
  *
  * Idempotent by the client-minted `clientGameId`, reused directly as the D1
  * `game_uuid` primary key — a re-POST (e.g. a retry after a flaky network) is a
@@ -82,10 +92,13 @@ function parseReportBody(raw: unknown): ReportBody | null {
   if (!isObj(raw)) return null
   if (typeof raw.clientGameId !== 'string' || raw.clientGameId.length === 0) return null
   if (typeof raw.playerCount !== 'number') return null
-  if (!Array.isArray(raw.players) || raw.players.length === 0 || !raw.players.every(isPlayer)) return null
+  // Player/move caps are a sanity bound, not a game rule (never modify
+  // packages/engine) — local games are structurally 1 human + a handful of AI
+  // seats, and a real game's move log is nowhere near 2000 entries.
+  if (!Array.isArray(raw.players) || raw.players.length === 0 || raw.players.length > 4 || !raw.players.every(isPlayer)) return null
   if (raw.winnerSeat !== null && typeof raw.winnerSeat !== 'number') return null
   if (!Array.isArray(raw.seats) || !raw.seats.every(isSeat)) return null
-  if (!Array.isArray(raw.moves) || !raw.moves.every(isMove)) return null
+  if (!Array.isArray(raw.moves) || raw.moves.length > 2000 || !raw.moves.every(isMove)) return null
   if (typeof raw.startedAt !== 'number' || typeof raw.endedAt !== 'number') return null
   return {
     clientGameId: raw.clientGameId,
@@ -113,13 +126,31 @@ export async function handleGamesReport(request: Request, env: IdentityEnv): Pro
   const body = parseReportBody(raw)
   if (!body) return json({ error: 'bad_body' }, 400)
 
-  // The reporter must own a HUMAN seat in the game they're reporting — never
-  // let an arbitrary authed caller archive a game on someone else's behalf.
-  const ownsASeat = body.players.some((p) => p.ownerType === 'human' && p.accountId === auth.accountId)
-  if (!ownsASeat) return json({ error: 'forbidden' }, 403)
+  // Local games are STRUCTURALLY always exactly 1 human seat + N AI seats
+  // (PlayVsAiModal -> startGame never produces anything else). Require
+  // exactly one human seat, and that it's the caller — this structurally
+  // guarantees opponent_kind is always 'ai' for a client-reported game, and
+  // that a caller can never write a row onto another account (a forged
+  // SECOND human seat, own or a victim's, is rejected outright rather than
+  // merely "the caller owns *a* seat").
+  const humanPlayers = body.players.filter((p) => p.ownerType === 'human')
+  if (humanPlayers.length !== 1 || humanPlayers[0]!.accountId !== auth.accountId) {
+    return json({ error: 'forbidden' }, 403)
+  }
 
   const seatsForKind: ArchiveSeatRow[] = body.players.map((p) => ({ seat_index: p.seat, owner_type: p.ownerType }))
   const movesForStats: ArchiveMoveRow[] = body.moves.map((m) => ({ ...m, by_ai: false }))
+
+  // Server-derived winner — NEVER trust body.winnerSeat (self-reported by a
+  // single device with no independent judge; a forged value could grant a
+  // false win/loss). Same tie-safe argmax as the live online archive's
+  // winnerSeatOf (do/archive.ts), applied to the client-reported per-seat
+  // final scores.
+  const scoresBySeat: number[] = []
+  for (const p of body.players) {
+    scoresBySeat[p.seat] = body.seats.find((s) => s.seat === p.seat)?.finalScore ?? 0
+  }
+  const winnerSeat = winnerSeatOf(scoresBySeat)
 
   const db = env.DB
 
@@ -131,14 +162,14 @@ export async function handleGamesReport(request: Request, env: IdentityEnv): Pro
        VALUES (?, 'local', 'completed', ?, 'client_reported', NULL, ?, 'completed', ?, ?, ?, 'iota')
        ON CONFLICT(game_uuid) DO NOTHING`,
     )
-    .bind(body.clientGameId, body.playerCount, body.winnerSeat, body.startedAt, body.endedAt, body.endedAt)
+    .bind(body.clientGameId, body.playerCount, winnerSeat, body.startedAt, body.endedAt, body.endedAt)
     .run()
 
   const stmts = body.players.map((p) => {
     const finalScore = body.seats.find((s) => s.seat === p.seat)?.finalScore ?? 0
     if (p.ownerType === 'human') {
       // SAME derivation the live archive/backfill use — see deriveSeatArchive.ts.
-      const fields = deriveSeatArchiveFields(seatsForKind, movesForStats, p.seat, finalScore, body.winnerSeat, body.startedAt, body.endedAt)
+      const fields = deriveSeatArchiveFields(seatsForKind, movesForStats, p.seat, finalScore, winnerSeat, body.startedAt, body.endedAt)
       return db
         .prepare(
           `INSERT INTO game_players
