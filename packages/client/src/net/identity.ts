@@ -54,6 +54,17 @@ export function getDisplayName(): string {
 }
 
 /**
+ * Persist a freshly-obtained token + accountId — the same storage `quickAuth`
+ * uses, shared with the VGames claim/login flows (`net/account.ts`'s
+ * `loginAccount`) so every path that mints/rotates a session writes through
+ * one place.
+ */
+export function setSession(token: string, accountId: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+  localStorage.setItem(ACCOUNT_KEY, accountId)
+}
+
+/**
  * POST /auth/quick { deviceCredential, displayName } → { token, accountId }.
  * Stores the token + accountId (+ displayName for silent re-auth). Presenting
  * the same credential always re-authenticates the SAME account.
@@ -72,8 +83,7 @@ export async function quickAuth(
     throw new Error(`quickAuth failed: ${res.status}`)
   }
   const data = (await res.json()) as { token: string; accountId: string }
-  localStorage.setItem(TOKEN_KEY, data.token)
-  localStorage.setItem(ACCOUNT_KEY, data.accountId)
+  setSession(data.token, data.accountId)
   localStorage.setItem(NAME_KEY, displayName)
   return data
 }
