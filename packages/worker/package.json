@@ -12,10 +12,17 @@
     "jose": "^6.2.3"
   },
   "devDependencies": {
-    "@cloudflare/vitest-pool-workers": "^0.8.19",
-    "@cloudflare/workers-types": "^4.20250510.0",
+    "@cloudflare/vitest-pool-workers": "^0.18.4",
+    "@cloudflare/workers-types": "^5.20260714.1",
+    "@vitest/expect": "^4.1.10",
+    "@vitest/mocker": "^4.1.10",
+    "@vitest/pretty-format": "^4.1.10",
+    "@vitest/runner": "^4.1.10",
+    "@vitest/snapshot": "^4.1.10",
+    "@vitest/spy": "^4.1.10",
+    "@vitest/utils": "^4.1.10",
     "vite": "^6.4.3",
-    "vitest": "^3.1.4",
-    "wrangler": "^4.107.0"
+    "vitest": "^4.1.10",
+    "wrangler": "^4.110.0"
   }
 }
