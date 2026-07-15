@@ -115,6 +115,7 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
      PRIMARY KEY (game, id_kind, external_id)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_extid_account ON external_identities(account_id)`,
+  // UNUSED at runtime: live leaderboards are computed in src/stats/leaderboard.ts (TS handlers); views kept as schema-documented reference only
   `CREATE VIEW IF NOT EXISTS v_leaderboard AS
    SELECT a.id AS account_id, a.display_name, g.game_type,
           COUNT(*) AS games,
