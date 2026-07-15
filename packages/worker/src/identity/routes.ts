@@ -10,7 +10,7 @@ import { validateUsername, validatePassword } from './username'
 import { hashCredential } from '../d1/accounts'
 import { upsertDevice, findAccountByDevice } from '../d1/devices'
 import { signVGamesToken, verifyAnyToken } from '../jwt'
-import { canonical } from './canonical'
+import { canonicalIdentitySummary } from './canonical'
 import { mergeAccounts } from './merge'
 import { verifyAdminToken, type AdminEnv } from './admin'
 
@@ -197,10 +197,16 @@ export async function handleIntrospect(request: Request, env: IdentityEnv): Prom
   if (!row) return json({ valid: false })
   if (claims.epoch !== undefined && claims.epoch !== row.token_epoch) return json({ valid: false })
 
-  const canon = await canonical(env.DB, claims.accountId)
-  if (!canon || canon.status === 'merged') return json({ valid: false })
+  const identity = await canonicalIdentitySummary(env.DB, claims.accountId)
+  if (!identity) return json({ valid: false })
 
-  return json({ valid: true, accountId: canon.id, status: canon.status })
+  return json({
+    valid: true,
+    accountId: identity.id,
+    status: identity.status,
+    displayName: identity.displayName,
+    aliases: identity.aliases,
+  })
 }
 
 /**
