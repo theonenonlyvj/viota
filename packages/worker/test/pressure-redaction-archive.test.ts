@@ -545,7 +545,14 @@ describe('PRESSURE: D1 archive round-trip (replay of archived log == terminal sn
           .first<{ status: string; outcome: string; winner_seat: number | null }>()
         expect(g!.status).toBe(terminalMeta.status)
         expect(g!.outcome).toBe(terminalMeta.status)
-        const expectedWinner = terminalMeta.status === 'completed' ? winnerSeatOf(terminalSnap.scores) : null
+        // Iota rule: completed AND stalemate endings both resolve winner_seat by
+        // high score (a stalemate is not a forced draw) — mirrors game-do.ts's
+        // archiveTick condition. Only this run's two possible terminal statuses
+        // (completed/stalemate, asserted above) ever reach flushGameEnd with a
+        // non-null winnerSeat; this stays correct even on a seed/RUNS change that
+        // starts producing stalemates (today's fixed BASE_SEED never does).
+        const expectedWinner =
+          terminalMeta.status === 'completed' || terminalMeta.status === 'stalemate' ? winnerSeatOf(terminalSnap.scores) : null
         expect(g!.winner_seat == null ? null : Number(g!.winner_seat)).toBe(expectedWinner)
 
         const players = (

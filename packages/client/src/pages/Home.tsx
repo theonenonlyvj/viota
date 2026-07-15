@@ -5,7 +5,9 @@ import Card from '../components/Card'
 import Button from '../components/Button'
 import PlayVsAiModal from '../components/PlayVsAiModal'
 import HowToPlayModal from '../components/HowToPlayModal'
+import AccountModal from '../components/AccountModal'
 import ResumeStrip from '../components/ResumeStrip'
+import { getDisplayName, getUsername } from '../net/identity'
 
 type Scatter = { card: CardType; left?: number; right?: number; top?: number; bottom?: number; rot: number; scale: number; opacity?: number; delay: number }
 
@@ -38,6 +40,13 @@ export default function Home() {
   const navigate = useNavigate()
   const [aiOpen, setAiOpen] = useState(false)
   const [howToOpen, setHowToOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  // Bumped by AccountModal's onIdentityChange to force a re-read of
+  // getUsername()/getDisplayName() below — they're plain localStorage reads,
+  // not reactive state, so a claim/login elsewhere needs an explicit nudge.
+  const [, setIdentityVersion] = useState(0)
+  const username = getUsername()
+  const identityLabel = username ?? getDisplayName()
 
   return (
     <div className="hero">
@@ -48,7 +57,20 @@ export default function Home() {
         </span>
         <div style={{ display: 'flex', gap: 22, alignItems: 'center' }}>
           <button type="button" onClick={() => navigate('/practice')} style={navLink}>practice</button>
+          <button type="button" onClick={() => navigate('/leaderboard')} style={navLink}>leaderboard</button>
+          <button type="button" onClick={() => navigate('/stats')} style={navLink}>your stats</button>
           <button type="button" onClick={() => setHowToOpen(true)} style={navLink}>how to play</button>
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            aria-label={`Account — ${identityLabel}`}
+            style={{ ...navLink, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, lineHeight: 1.15 }}
+          >
+            <span>{identityLabel}</span>
+            {!username && (
+              <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--brand-cyan)' }}>claim to save across devices</span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -96,6 +118,11 @@ export default function Home() {
 
       <PlayVsAiModal open={aiOpen} onClose={() => setAiOpen(false)} />
       <HowToPlayModal open={howToOpen} onClose={() => setHowToOpen(false)} />
+      <AccountModal
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        onIdentityChange={() => setIdentityVersion((v) => v + 1)}
+      />
     </div>
   )
 }

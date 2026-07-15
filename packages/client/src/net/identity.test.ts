@@ -4,6 +4,8 @@ import {
   getGhostId,
   getToken,
   getAccountId,
+  getUsername,
+  setUsername,
   quickAuth,
 } from './identity'
 
@@ -59,4 +61,11 @@ test('quickAuth POSTs credential+name and stores the token + accountId', async (
 test('quickAuth throws on a non-ok response', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }))
   await expect(quickAuth('http://localhost:8787', 'Bad')).rejects.toThrow()
+})
+
+test('getUsername is null until a claimed username is stored', () => {
+  expect(getUsername()).toBeNull()
+  setUsername('vijay')
+  expect(getUsername()).toBe('vijay')
+  expect(localStorage.getItem('viota_username')).toBe('vijay')
 })

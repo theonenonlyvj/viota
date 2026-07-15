@@ -16,6 +16,7 @@ const CRED_KEY = 'viota_device_credential'
 const TOKEN_KEY = 'viota_token'
 const ACCOUNT_KEY = 'viota_account_id'
 const NAME_KEY = 'viota_display_name'
+const USERNAME_KEY = 'viota_username'
 
 function toHex(bytes: Uint8Array): string {
   let s = ''
@@ -54,6 +55,32 @@ export function getDisplayName(): string {
 }
 
 /**
+ * The claimed VGames username, if this device has ever successfully claimed
+ * or logged into one (`net/account.ts`'s `claimAccount`/`loginAccount`).
+ * `null` for an unclaimed ghost — callers fall back to `getDisplayName()`.
+ * There's no server "whoami" read for this (`/auth/introspect` returns no
+ * username), so it's the client's own record of the identity it just set.
+ */
+export function getUsername(): string | null {
+  return localStorage.getItem(USERNAME_KEY)
+}
+
+export function setUsername(username: string): void {
+  localStorage.setItem(USERNAME_KEY, username)
+}
+
+/**
+ * Persist a freshly-obtained token + accountId — the same storage `quickAuth`
+ * uses, shared with the VGames claim/login flows (`net/account.ts`'s
+ * `loginAccount`) so every path that mints/rotates a session writes through
+ * one place.
+ */
+export function setSession(token: string, accountId: string): void {
+  localStorage.setItem(TOKEN_KEY, token)
+  localStorage.setItem(ACCOUNT_KEY, accountId)
+}
+
+/**
  * POST /auth/quick { deviceCredential, displayName } → { token, accountId }.
  * Stores the token + accountId (+ displayName for silent re-auth). Presenting
  * the same credential always re-authenticates the SAME account.
@@ -72,8 +99,7 @@ export async function quickAuth(
     throw new Error(`quickAuth failed: ${res.status}`)
   }
   const data = (await res.json()) as { token: string; accountId: string }
-  localStorage.setItem(TOKEN_KEY, data.token)
-  localStorage.setItem(ACCOUNT_KEY, data.accountId)
+  setSession(data.token, data.accountId)
   localStorage.setItem(NAME_KEY, displayName)
   return data
 }

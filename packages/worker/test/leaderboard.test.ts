@@ -1,0 +1,248 @@
+import { SELF, env } from 'cloudflare:test'
+import { describe, it, expect, beforeAll } from 'vitest'
+import { applyD1Schema } from '../src/d1/schema'
+import { authHeaders } from './helpers'
+
+/**
+ * Task 9 — GET /leaderboard. The shared test D1 is NOT isolated per file
+ * (vitest.config.ts: singleWorker+isolatedStorage:false) and other suites
+ * leave their own accounts/games behind. So every assertion here looks up
+ * THIS test's own (crypto.randomUUID()-scoped) account ids within `rows`
+ * rather than asserting the full array or an exact rank number — the
+ * endpoint is a GLOBAL ranking, so "is my row correct / in the right
+ * relative order / present-or-absent" is the robust, meaningful thing to
+ * check regardless of what else is in the shared database.
+ */
+
+const DB = () => (env as unknown as { DB: D1Database }).DB
+
+beforeAll(async () => {
+  await applyD1Schema(DB())
+})
+
+async function mkAccount(id: string, opts: { username?: string; displayName: string }): Promise<void> {
+  const now = Date.now()
+  await DB()
+    .prepare(
+      `INSERT INTO accounts (id,credential_hash,username,display_name,created_at,status,token_epoch,origin_game,must_change_pw,login_fail_count,last_seen_at)
+       VALUES (?,?,?,?,?,?,0,'iota',0,0,?)`,
+    )
+    .bind(id, 'c' + id, opts.username ?? null, opts.displayName, now, opts.username ? 'claimed' : 'ghost', now)
+    .run()
+}
+
+/** One single-seat "game" attributed to `accountId` with the EXACT
+ *  result/opponent_kind/stats/final_score the board queries read — the write
+ *  path (archive/backfill) is covered elsewhere; this file tests the read
+ *  side directly and precisely. */
+async function seedGame(
+  accountId: string,
+  opts: {
+    opponentKind: 'human' | 'ai'
+    result: 'win' | 'loss' | 'draw'
+    finalScore: number
+    bestPlay?: number
+    endedAt: number
+    status?: 'completed' | 'stalemate'
+    /** Defaults to 0/0 (schema default) — a normal, fully-human-played seat. */
+    totalMoves?: number
+    aiMoveCount?: number
+  },
+): Promise<void> {
+  const gameUuid = `lb-${crypto.randomUUID()}`
+  await DB()
+    .prepare(`INSERT INTO games (game_uuid, status, player_count, ended_at, created_at, game_type) VALUES (?, ?, 2, ?, ?, 'iota')`)
+    .bind(gameUuid, opts.status ?? 'completed', opts.endedAt, opts.endedAt - 1_000)
+    .run()
+  const stats = JSON.stringify({
+    points: opts.finalScore,
+    bestPlay: opts.bestPlay ?? 0,
+    plays: 1,
+    passes: 0,
+    wildsRecycled: 0,
+    cardsPlayed: 1,
+    moves: 1,
+    durationMs: 1_000,
+  })
+  await DB()
+    .prepare(
+      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats, total_moves, ai_move_count)
+       VALUES (?, 0, ?, 'human', ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats, opts.totalMoves ?? 0, opts.aiMoveCount ?? 0)
+    .run()
+}
+
+async function fetchBoard(board: string, extraHeaders: Record<string, string> = {}): Promise<{ status: number; body: any }> {
+  const res = await SELF.fetch(`https://example.com/leaderboard?game=iota&board=${board}`, { headers: extraHeaders })
+  return { status: res.status, body: await res.json() }
+}
+
+describe('GET /leaderboard', () => {
+  it('400s an unknown board key', async () => {
+    const { status } = await fetchBoard('not-a-real-board')
+    expect(status).toBe(400)
+  })
+
+  it('400s an unsupported game', async () => {
+    const res = await SELF.fetch('https://example.com/leaderboard?game=jaipur&board=wins-friends')
+    expect(res.status).toBe(400)
+  })
+
+  it('winrate-friends: applies the min-5-games floor and ranks by win rate descending', async () => {
+    const acctAbove = `lb-above-${crypto.randomUUID()}`
+    const acctBelow = `lb-below-${crypto.randomUUID()}`
+    const acctTop = `lb-top-${crypto.randomUUID()}`
+    await mkAccount(acctAbove, { displayName: 'Above Floor' })
+    await mkAccount(acctBelow, { displayName: 'Below Floor' })
+    await mkAccount(acctTop, { displayName: 'Top' })
+
+    let t0 = Date.now()
+    // acctAbove: 5 vs-human games, 3 wins -> 0.6
+    for (const result of ['win', 'win', 'win', 'loss', 'loss'] as const) {
+      await seedGame(acctAbove, { opponentKind: 'human', result, finalScore: 10, endedAt: t0++ })
+    }
+    // acctBelow: 4 vs-human games, all wins -> 1.0 but BELOW the 5-game floor
+    for (let i = 0; i < 4; i++) {
+      await seedGame(acctBelow, { opponentKind: 'human', result: 'win', finalScore: 10, endedAt: t0++ })
+    }
+    // acctTop: 5 vs-human games, all wins -> 1.0, meets the floor
+    for (let i = 0; i < 5; i++) {
+      await seedGame(acctTop, { opponentKind: 'human', result: 'win', finalScore: 10, endedAt: t0++ })
+    }
+
+    const { status, body } = await fetchBoard('winrate-friends')
+    expect(status).toBe(200)
+    expect(body.board).toBe('winrate-friends')
+
+    expect(body.rows.find((r: any) => r.accountId === acctBelow)).toBeUndefined() // excluded: below floor
+
+    const rowAbove = body.rows.find((r: any) => r.accountId === acctAbove)
+    const rowTop = body.rows.find((r: any) => r.accountId === acctTop)
+    expect(rowAbove).toMatchObject({ value: 0.6, games: 5, displayName: 'Above Floor' })
+    expect(rowTop).toMatchObject({ value: 1, games: 5, displayName: 'Top' })
+
+    const idxAbove = body.rows.findIndex((r: any) => r.accountId === acctAbove)
+    const idxTop = body.rows.findIndex((r: any) => r.accountId === acctTop)
+    expect(idxTop).toBeLessThan(idxAbove) // higher win rate ranks first
+  })
+
+  it('wins-friends: no min-games floor, ranks by total wins', async () => {
+    const acct = `lb-winsf-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Wins Friends' })
+    const t0 = Date.now()
+    for (let i = 0; i < 3; i++) await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: t0 + i })
+    await seedGame(acct, { opponentKind: 'human', result: 'loss', finalScore: 1, endedAt: t0 + 10 })
+
+    const { body } = await fetchBoard('wins-friends')
+    const row = body.rows.find((r: any) => r.accountId === acct)
+    expect(row).toMatchObject({ value: 3, games: 4 })
+  })
+
+  it('streak-friends: longest consecutive win run (not the total, not just the trailing run)', async () => {
+    const acct = `lb-streak-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Streaker' })
+    const t0 = Date.now()
+    const sequence = ['win', 'win', 'loss', 'win', 'win', 'win'] as const // longest run = 3
+    for (let i = 0; i < sequence.length; i++) {
+      await seedGame(acct, { opponentKind: 'human', result: sequence[i]!, finalScore: 5, endedAt: t0 + i * 100 })
+    }
+
+    const { body } = await fetchBoard('streak-friends')
+    const row = body.rows.find((r: any) => r.accountId === acct)
+    expect(row).toMatchObject({ value: 3, games: 6 })
+  })
+
+  it('winrate-ai/wins-ai: scoped to opponent_kind=ai, vs-human games never leak in', async () => {
+    const acct = `lb-ai-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'AI Grinder' })
+    let t0 = Date.now()
+    // 5 vs-AI games, 4 wins -> 0.8
+    for (const result of ['win', 'win', 'win', 'win', 'loss'] as const) {
+      await seedGame(acct, { opponentKind: 'ai', result, finalScore: 5, endedAt: t0++ })
+    }
+    // a vs-human win that must NOT count toward the vs-AI numbers
+    await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 99, endedAt: t0++ })
+
+    const winrate = await fetchBoard('winrate-ai')
+    const wins = await fetchBoard('wins-ai')
+    expect(winrate.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 0.8, games: 5 })
+    expect(wins.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 4, games: 5 })
+  })
+
+  it('excludes an AI-takeover-majority game (ai_move_count*2 > total_moves) from wins-friends/winrate-friends', async () => {
+    const acct = `lb-takeover-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Takeover Victim' })
+    let t0 = Date.now()
+    // 4 normal wins + 1 normal loss, human played every move -> meets the
+    // 5-game winrate floor cleanly: wins-friends=4, winrate-friends=0.8.
+    for (const result of ['win', 'win', 'win', 'win', 'loss'] as const) {
+      await seedGame(acct, { opponentKind: 'human', result, finalScore: 10, endedAt: t0++, totalMoves: 4, aiMoveCount: 1 })
+    }
+    // A 6th game, also a "win", but the AI played the majority of the seat's
+    // moves (ai_move_count*2 > total_moves) while the owner was away — must
+    // be excluded, so it must NOT move wins-friends to 5 or winrate to 5/6.
+    await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 10, endedAt: t0++, totalMoves: 4, aiMoveCount: 3 })
+
+    const wins = await fetchBoard('wins-friends')
+    const winrate = await fetchBoard('winrate-friends')
+    expect(wins.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 4, games: 5 })
+    expect(winrate.body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 0.8, games: 5 })
+  })
+
+  it('bestplay: max json_extract(stats, bestPlay) across ALL opponent kinds', async () => {
+    const acct = `lb-bp-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Big Play' })
+    const t0 = Date.now()
+    await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 20, bestPlay: 12, endedAt: t0 })
+    await seedGame(acct, { opponentKind: 'ai', result: 'loss', finalScore: 5, bestPlay: 45, endedAt: t0 + 1 })
+    await seedGame(acct, { opponentKind: 'human', result: 'loss', finalScore: 8, bestPlay: 30, endedAt: t0 + 2 })
+
+    const { body } = await fetchBoard('bestplay')
+    expect(body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 45, games: 3 })
+  })
+
+  it('bestgame: max final_score across ALL opponent kinds', async () => {
+    const acct = `lb-bg-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'High Score' })
+    const t0 = Date.now()
+    await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 20, endedAt: t0 })
+    await seedGame(acct, { opponentKind: 'ai', result: 'loss', finalScore: 55, endedAt: t0 + 1 })
+    await seedGame(acct, { opponentKind: 'human', result: 'loss', finalScore: 8, endedAt: t0 + 2 })
+
+    const { body } = await fetchBoard('bestgame')
+    expect(body.rows.find((r: any) => r.accountId === acct)).toMatchObject({ value: 55, games: 3 })
+  })
+
+  it('ghosts (no username) appear by display_name; claimed accounts show their username', async () => {
+    const ghostId = `lb-ghost-${crypto.randomUUID()}`
+    const claimedId = `lb-claimed-${crypto.randomUUID()}`
+    await mkAccount(ghostId, { displayName: 'Ghost Player' })
+    await mkAccount(claimedId, { username: `vee${crypto.randomUUID().slice(0, 8)}`, displayName: 'Vee Claimed' })
+    const t0 = Date.now()
+    await seedGame(ghostId, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: t0 })
+    await seedGame(claimedId, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: t0 + 1 })
+
+    const { body } = await fetchBoard('wins-friends')
+    const ghostRow = body.rows.find((r: any) => r.accountId === ghostId)
+    const claimedRow = body.rows.find((r: any) => r.accountId === claimedId)
+    expect(ghostRow.username == null).toBe(true)
+    expect(ghostRow.displayName).toBe('Ghost Player')
+    expect(claimedRow.username).toMatch(/^vee/)
+  })
+
+  it('includes me:{rank,value} for a valid Bearer, self-consistent with the row order; omits it with no Bearer', async () => {
+    const acct = `lb-me-${crypto.randomUUID()}`
+    await mkAccount(acct, { displayName: 'Me Baller' })
+    const t0 = Date.now()
+    for (let i = 0; i < 5; i++) await seedGame(acct, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: t0 + i })
+
+    const authed = await fetchBoard('winrate-friends', await authHeaders(acct))
+    const idx = authed.body.rows.findIndex((r: any) => r.accountId === acct)
+    expect(idx).toBeGreaterThanOrEqual(0)
+    expect(authed.body.me).toEqual({ rank: idx + 1, value: authed.body.rows[idx].value })
+
+    const anon = await fetchBoard('winrate-friends')
+    expect(anon.body.me).toBeUndefined()
+  })
+})
