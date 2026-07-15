@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { serverUrl } from '../net/config'
 import { fetchMyStats, type MeStats } from '../net/leaderboard'
+import { getUsername } from '../net/identity'
 import Button from '../components/Button'
+import AccountModal from '../components/AccountModal'
 
 const SERVER_URL = serverUrl()
 
@@ -58,6 +60,11 @@ export default function YourStats() {
   const navigate = useNavigate()
   // undefined = loading; null = no resolvable stats yet (no token / fetch failed).
   const [stats, setStats] = useState<MeStats | null | undefined>(undefined)
+  const [accountOpen, setAccountOpen] = useState(false)
+  // Bumped by AccountModal's onIdentityChange so a claim/login re-reads
+  // getUsername() (a plain localStorage read, not reactive state) — this both
+  // hides the claim CTA and re-pulls stats for the now-claimed identity.
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -65,7 +72,7 @@ export default function YourStats() {
       .then((s) => { if (active) setStats(s) })
       .catch(() => { if (active) setStats(null) })
     return () => { active = false }
-  }, [])
+  }, [refreshKey])
 
   return (
     <div style={{ minHeight: '100dvh', padding: '84px 24px 48px', maxWidth: 640, margin: '0 auto', position: 'relative', zIndex: 1 }}>
@@ -84,12 +91,24 @@ export default function YourStats() {
           </p>
           <div style={{ marginTop: 18, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <Button variant="primary" onClick={() => navigate('/lobby')}>Play with friends</Button>
+            {!getUsername() && (
+              <Button variant="secondary" onClick={() => setAccountOpen(true)}>
+                Claim your name — save your stats across devices
+              </Button>
+            )}
           </div>
         </div>
       )}
 
       {stats && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {!getUsername() && (
+            <div style={{ display: 'flex' }}>
+              <Button variant="primary" onClick={() => setAccountOpen(true)}>
+                Claim your name — save your stats across devices
+              </Button>
+            </div>
+          )}
           <Panel testId="stats-overview" label="Overview">
             <Row label="Total games" value={String(stats.games)} />
             <Row label="Player since" value={stats.playerSince !== null ? formatDate(stats.playerSince) : '—'} />
@@ -122,6 +141,12 @@ export default function YourStats() {
           </Panel>
         </div>
       )}
+
+      <AccountModal
+        open={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        onIdentityChange={() => setRefreshKey((k) => k + 1)}
+      />
     </div>
   )
 }
