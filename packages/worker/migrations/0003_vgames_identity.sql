@@ -65,6 +65,7 @@ ALTER TABLE game_players ADD COLUMN stats         TEXT;
 ALTER TABLE game_players ADD COLUMN ai_move_count INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE game_players ADD COLUMN total_moves   INTEGER NOT NULL DEFAULT 0;
 
+-- UNUSED at runtime: live leaderboards are computed in src/stats/leaderboard.ts (TS handlers); views kept as schema-documented reference only
 CREATE VIEW IF NOT EXISTS v_leaderboard AS
 SELECT a.id AS account_id, a.display_name, g.game_type,
        COUNT(*) AS games,

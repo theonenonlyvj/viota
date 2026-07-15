@@ -154,6 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_extid_account ON external_identities(account_id);
 
 -- Cosmetic leaderboard views (P1). Only human-majority-move games count (an
 -- AI-takeover-heavy game is excluded via the ai_move_count/total_moves guard).
+-- UNUSED at runtime: live leaderboards are computed in src/stats/leaderboard.ts (TS handlers); views kept as schema-documented reference only
 CREATE VIEW IF NOT EXISTS v_leaderboard AS
 SELECT a.id AS account_id, a.display_name, g.game_type,
        COUNT(*) AS games,
