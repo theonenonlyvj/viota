@@ -1,8 +1,6 @@
 import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
-import { handleAuthQuick } from './d1/accounts'
-import { handleClaim } from './d1/claim'
-import { handleSetCredentials, handleLogin, handleIntrospect, handleAdminMerge } from './identity/routes'
+import { routeIdentity } from './identity/router'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
@@ -54,36 +52,12 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const path = url.pathname
 
-    // POST /auth/quick -> mint-or-authenticate a quick account (D1 accounts).
-    if (request.method === 'POST' && path === '/auth/quick') {
-      return handleAuthQuick(request, env)
-    }
-
-    // POST /auth/set-credentials -> VGames identity: claim username+password
-    // onto the caller's current ghost account, in place (Bearer-authed).
-    if (request.method === 'POST' && path === '/auth/set-credentials') {
-      return handleSetCredentials(request, env)
-    }
-
-    // POST /auth/login -> VGames identity: username+password login, binds the
-    // presenting device, mints a fresh vgames token.
-    if (request.method === 'POST' && path === '/auth/login') {
-      return handleLogin(request, env)
-    }
-
-    // POST /auth/introspect -> VGames identity: server-to-server token
-    // validation (always 200; validity is in the body). Used by other games'
-    // servers (e.g. vjaipur) to verify a client-presented vgames token.
-    if (request.method === 'POST' && path === '/auth/introspect') {
-      return handleIntrospect(request, env)
-    }
-
-    // POST /admin/merge -> VGames identity: operator-driven account merge.
-    // Gated by a SEPARATE admin step-up token (ADMIN_JWT_SECRET), never the
-    // player-facing JWT_SECRET.
-    if (request.method === 'POST' && path === '/admin/merge') {
-      return handleAdminMerge(request, env)
-    }
+    // VGames Identity surface (/auth/*, /claim, /admin/merge) — routed through
+    // the SHARED router so viota-worker and the standalone vgames-identity
+    // service (src/identity-entry.ts) can't drift. Returns null for a non-
+    // identity path, in which case we fall through to gameplay routing below.
+    const identity = await routeIdentity(request, env)
+    if (identity) return identity
 
     // POST /admin/backfill-stats -> Phase 3: one-time (idempotent) backfill of
     // result/opponent_kind/stats/total_moves/ai_move_count for online games
@@ -91,11 +65,6 @@ async function route(request: Request, env: Env): Promise<Response> {
     // step-up gate as /admin/merge (ADMIN_JWT_SECRET, aud:'vgames-admin').
     if (request.method === 'POST' && path === '/admin/backfill-stats') {
       return handleAdminBackfillStats(request, env)
-    }
-
-    // POST /claim -> claim device ghost games into the authed account.
-    if (request.method === 'POST' && path === '/claim') {
-      return handleClaim(request, env)
     }
 
     // GET /leaderboard?game=iota&board=<key> -> Phase 5 (Task 9): ranked board
