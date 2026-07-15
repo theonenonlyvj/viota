@@ -3,10 +3,14 @@ import { useGameStore } from './gameStore'
 import { posKey } from '@viota/engine'
 import type { Card, RegularCard, Move, Position } from '@viota/engine'
 import { computeValidPositions } from '../gameLogic'
+import { reportLocalGame } from '../net/reportGame'
+
+vi.mock('../net/reportGame', () => ({ reportLocalGame: vi.fn().mockResolvedValue(undefined) }))
 
 function store() { return useGameStore.getState() }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   store().startGame(2, 'easy')
 })
 
@@ -192,3 +196,72 @@ test('startRecycle excludes staged cards from recycleValidCards', () => {
 // The old vote-based online mode was deleted in Phase 6 (auto-cover + the
 // HTTP-first store path replace it). New online-store tests live in
 // gameStore.online.test.ts.
+
+// --- Task 8: local-game move log + report-on-finish wiring -----------------
+
+const RT = (n: 1 | 2 | 3 | 4): RegularCard => ({ kind: 'regular', color: 'red', shape: 'triangle', number: n })
+
+/** Force the store into a ONE-MOVE-FROM-OVER local state: an empty draw pile
+ *  and a 1-card human hand, so `confirmPlay`'s single play satisfies the
+ *  engine's game-ending rule (`drawPile.length===0 && placements.length===
+ *  hand.length` — see gameLoop.ts's applyPlay). The wild+red-triangle-1/2
+ *  geometry is the SAME proven-legal fixture packages/worker/test/helpers.ts
+ *  drives for real (buildScriptedGame's step A). */
+function forceOneMoveFromGameOver() {
+  const grid = new Map<string, Card>()
+  grid.set(posKey({ x: 0, y: 0 }), { kind: 'wild' })
+  grid.set(posKey({ x: 1, y: 0 }), RT(1))
+  const playCard = RT(2)
+  useGameStore.setState({
+    grid,
+    hands: [[playCard], []],
+    drawPile: [],
+    scores: [0, 0],
+    turnIndex: 0,
+    playedCards: [RT(1)],
+    consecutivePasses: 0,
+    finished: false,
+    playerCount: 2,
+    humanIndex: 0,
+    mode: 'local',
+    staged: [{ card: playCard, position: { x: 2, y: 0 } }],
+    localMoves: [],
+    localReported: false,
+  })
+}
+
+test('confirmPlay accumulates a local move log entry with the engine-derived score_delta', () => {
+  store().pass([], []) // seat 0 passes (turnIndex -> 1), logged as this game's move #1
+  expect(store().localMoves).toHaveLength(1)
+  expect(store().localMoves[0]).toMatchObject({ seat_index: 0, type: 'pass', score_delta: 0 })
+  expect(typeof store().localMoves[0]!.created_at).toBe('number')
+})
+
+test('a finished LOCAL game calls reportLocalGame exactly once, with the move log + humanSeat', () => {
+  forceOneMoveFromGameOver()
+
+  store().confirmPlay()
+
+  expect(store().finished).toBe(true)
+  expect(store().phase).toBe('game-over')
+  expect(store().localReported).toBe(true)
+  expect(reportLocalGame).toHaveBeenCalledTimes(1)
+
+  const [url, game] = (reportLocalGame as ReturnType<typeof vi.fn>).mock.calls[0]!
+  expect(typeof url).toBe('string')
+  expect(game.humanSeat).toBe(0)
+  expect(game.scores).toEqual(store().scores)
+  expect(game.moves).toHaveLength(1)
+  expect(game.moves[0]).toMatchObject({ seat_index: 0, type: 'play' })
+
+  // Re-entering the finished-game report path (e.g. a stray re-render/call)
+  // must never double-report.
+  store().reportLocalIfFinished()
+  expect(reportLocalGame).toHaveBeenCalledTimes(1)
+})
+
+test('reportLocalIfFinished no-ops for an online game (never reports online play)', () => {
+  useGameStore.setState({ mode: 'online', finished: true, localReported: false })
+  store().reportLocalIfFinished()
+  expect(reportLocalGame).not.toHaveBeenCalled()
+})

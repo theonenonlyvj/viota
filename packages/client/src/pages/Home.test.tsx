@@ -1,14 +1,25 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
 
 const navigate = vi.fn()
 vi.mock('react-router-dom', async (orig) => ({ ...(await orig<any>()), useNavigate: () => navigate }))
 vi.mock('../store/gameStore', () => ({ useGameStore: (sel: any) => sel({ startGame: vi.fn() }) }))
 vi.mock('../components/ResumeStrip', () => ({ default: () => null }))
+vi.mock('../components/AccountModal', () => ({
+  default: ({ open }: { open: boolean }) => (open ? <div data-testid="account-modal" /> : null),
+}))
+
+let mockUsername: string | null = null
+vi.mock('../net/identity', () => ({
+  getUsername: () => mockUsername,
+  getDisplayName: () => 'Guest99',
+}))
 
 import Home from './Home'
+
+beforeEach(() => { mockUsername = null })
 
 function renderHome() { return render(<MemoryRouter><Home /></MemoryRouter>) }
 
@@ -41,4 +52,39 @@ test('practice link navigates to /practice', async () => {
   renderHome()
   await userEvent.click(screen.getByRole('button', { name: /^practice$/i }))
   expect(navigate).toHaveBeenCalledWith('/practice')
+})
+
+test('leaderboard link navigates to /leaderboard', async () => {
+  renderHome()
+  await userEvent.click(screen.getByRole('button', { name: /^leaderboard$/i }))
+  expect(navigate).toHaveBeenCalledWith('/leaderboard')
+})
+
+test('your stats link navigates to /stats', async () => {
+  renderHome()
+  await userEvent.click(screen.getByRole('button', { name: /^your stats$/i }))
+  expect(navigate).toHaveBeenCalledWith('/stats')
+})
+
+test('the account entry shows the guest display name + a claim nudge when unclaimed', () => {
+  mockUsername = null
+  renderHome()
+  const btn = screen.getByRole('button', { name: /^account/i })
+  expect(btn).toHaveTextContent('Guest99')
+  expect(screen.getByText(/claim.*across devices/i)).toBeInTheDocument()
+})
+
+test('the account entry shows the claimed username with no nudge once claimed', () => {
+  mockUsername = 'vijay'
+  renderHome()
+  const btn = screen.getByRole('button', { name: /^account/i })
+  expect(btn).toHaveTextContent('vijay')
+  expect(screen.queryByText(/claim.*across devices/i)).toBeNull()
+})
+
+test('clicking the account entry opens the account modal', async () => {
+  renderHome()
+  expect(screen.queryByTestId('account-modal')).toBeNull()
+  await userEvent.click(screen.getByRole('button', { name: /^account/i }))
+  expect(screen.getByTestId('account-modal')).toBeInTheDocument()
 })

@@ -1,4 +1,5 @@
 import type { MoveRow, SeatRow } from './storage'
+import { deriveSeatArchiveFields, gameStartOf } from '../stats/deriveSeatArchive'
 
 /**
  * D1 archive write-through (must-fix #8 — the Cloudflare Queue is NOT used).
@@ -133,9 +134,25 @@ export type GameEnd = {
   endedAt: number
   lastActivityAt: number
   finalScores: number[]
+  /** DO-local seat rows (owner_type), for `opponent_kind` classification +
+   *  deciding which seats get a stats blob. Optional so a caller with no
+   *  per-seat data (e.g. an older direct `flushGameEnd` call) still works —
+   *  it just means no seat is written as 'human', so only `final_score` is
+   *  updated (today's behavior, unchanged). */
+  seats?: SeatRow[]
+  /** The game's non-reverted move log (any seat), for `computeSeatStats`.
+   *  Optional for the same backward-compat reason as `seats`. */
+  moves?: MoveRow[]
 }
 
-/** Finalize the archive game row (status/outcome/winner/ended) + per-seat scores. */
+/**
+ * Finalize the archive game row (status/outcome/winner/ended) + per-seat
+ * scores. For each HUMAN seat (per `end.seats`) also derives + writes
+ * `result` (win/draw/loss from `winnerSeat`), `opponent_kind`, and a
+ * `computeSeatStats` JSON blob from `end.moves` — the v1 stats/leaderboards
+ * data (spec §3/§4). Non-human seats (or callers that omit `seats`/`moves`)
+ * keep the original final_score-only update.
+ */
 export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEnd): Promise<void> {
   await db
     .prepare(
@@ -146,9 +163,31 @@ export async function flushGameEnd(db: D1Database, gameUuid: string, end: GameEn
     .bind(end.status, end.outcome, end.winnerSeat, end.endedAt, end.lastActivityAt, gameUuid)
     .run()
 
-  const stmts = end.finalScores.map((score, seat) =>
-    db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat),
-  )
+  const seats = end.seats ?? []
+  const moves = end.moves ?? []
+  // gameStart proxies off the earliest archived move (no extra D1 round-trip
+  // to read the games.created_at row) — shared with backfillStats (Phase 3)
+  // so a live-archived and a backfilled game derive IDENTICAL stats.
+  const gameStart = gameStartOf(moves, end.endedAt)
+
+  const stmts = end.finalScores.map((score, seat) => {
+    const seatRow = seats.find((s) => s.seat_index === seat)
+    if (seatRow && seatRow.owner_type === 'human') {
+      // Shared with backfillStats (src/stats/backfill.ts) — see
+      // deriveSeatArchive.ts's docstring: this is the ONE place win/loss/draw
+      // + opponent_kind + stats + move-count derivation lives, so the live
+      // and backfilled paths can never drift apart.
+      const fields = deriveSeatArchiveFields(seats, moves, seat, score, end.winnerSeat, gameStart, end.endedAt)
+      return db
+        .prepare(
+          `UPDATE game_players
+             SET final_score = ?, result = ?, opponent_kind = ?, stats = ?, total_moves = ?, ai_move_count = ?
+           WHERE game_uuid = ? AND seat_index = ?`,
+        )
+        .bind(score, fields.result, fields.opponentKind, fields.stats, fields.totalMoves, fields.aiMoveCount, gameUuid, seat)
+    }
+    return db.prepare(`UPDATE game_players SET final_score = ? WHERE game_uuid = ? AND seat_index = ?`).bind(score, gameUuid, seat)
+  })
   if (stmts.length) await db.batch(stmts)
 }
 
@@ -202,10 +241,13 @@ export async function listResumableGames(db: D1Database, accountId: string): Pro
   return results
 }
 
-/** argmax of a score vector (first max on ties), or null when empty. */
+/** argmax of a score vector, or null when empty OR when >1 seat shares the max
+ *  (a tie — CRITICAL: must archive as a draw, never pick the lowest seat index
+ *  as an arbitrary winner). */
 export function winnerSeatOf(scores: number[]): number | null {
   if (scores.length === 0) return null
   let best = 0
   for (let i = 1; i < scores.length; i++) if ((scores[i] ?? 0) > (scores[best] ?? 0)) best = i
-  return best
+  const max = scores[best] ?? 0
+  return scores.filter((s) => (s ?? 0) === max).length > 1 ? null : best
 }

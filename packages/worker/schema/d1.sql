@@ -75,7 +75,9 @@ CREATE INDEX IF NOT EXISTS idx_games_type_status ON games (game_type, status);
 -- Per-seat ownership at game time. The index on account_id is THE cross-session
 -- analytics join (a player's history spans games/sessions/devices once ghost
 -- games are claimed). result/stats/ai_move_count/total_moves back the
--- leaderboard views below.
+-- leaderboard views below. opponent_kind (migration 0004, folded here):
+-- 'human' iff >=1 OTHER seat in the game was human-owned, else 'ai' — lets the
+-- vs-Friends / vs-AI boards filter cheaply without re-deriving per query.
 CREATE TABLE IF NOT EXISTS game_players (
   game_uuid     TEXT,
   seat_index    INTEGER,
@@ -88,6 +90,7 @@ CREATE TABLE IF NOT EXISTS game_players (
   stats         TEXT,
   ai_move_count INTEGER NOT NULL DEFAULT 0,
   total_moves   INTEGER NOT NULL DEFAULT 0,
+  opponent_kind TEXT,
   PRIMARY KEY (game_uuid, seat_index)
 );
 CREATE INDEX IF NOT EXISTS idx_game_players_account ON game_players (account_id);

@@ -236,7 +236,10 @@ export class GameDO extends DurableObject<Env> {
   }
 
   /** Flush the outbox, then finalize the archive game row iff the game ended. A
-   *  game-end tick therefore leaves ZERO unflushed outbox rows. Never rejects. */
+   *  game-end tick therefore leaves ZERO unflushed outbox rows. Never rejects.
+   *  `seats`/`moves` are read from the DO's OWN already-open local SQLite (no
+   *  extra D1 round-trip) so `flushGameEnd` can derive each human seat's
+   *  result/opponent_kind/stats in the same write-through pass. */
   async archiveTick(now: number, db: D1Database = this.env.DB): Promise<void> {
     await this.flushOutbox(now, db)
     const meta = this.repo.getMeta()
@@ -246,10 +249,15 @@ export class GameDO extends DurableObject<Env> {
       await flushGameEnd(db, meta.game_uuid, {
         status: meta.status,
         outcome: meta.status,
-        winnerSeat: meta.status === 'completed' ? winnerSeatOf(scores) : null,
+        // Iota rule: a stalemate ending (all-pass rounds) still resolves by high
+        // score, just like a completed game — it is NOT a forced draw. Only
+        // truly winner-less terminal statuses (e.g. abandoned) stay null.
+        winnerSeat: meta.status === 'completed' || meta.status === 'stalemate' ? winnerSeatOf(scores) : null,
         endedAt: now,
         lastActivityAt: now,
         finalScores: scores,
+        seats: this.repo.getSeats(),
+        moves: this.repo.getMovesSince(0).filter((m) => !m.reverted),
       })
     } catch {
       /* leave for the cron retry */
