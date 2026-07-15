@@ -16,6 +16,7 @@ const CRED_KEY = 'viota_device_credential'
 const TOKEN_KEY = 'viota_token'
 const ACCOUNT_KEY = 'viota_account_id'
 const NAME_KEY = 'viota_display_name'
+const USERNAME_KEY = 'viota_username'
 
 function toHex(bytes: Uint8Array): string {
   let s = ''
@@ -51,6 +52,21 @@ export function getAccountId(): string | null {
 /** The last display name used (for silent re-auth); falls back to 'Player'. */
 export function getDisplayName(): string {
   return localStorage.getItem(NAME_KEY) ?? 'Player'
+}
+
+/**
+ * The claimed VGames username, if this device has ever successfully claimed
+ * or logged into one (`net/account.ts`'s `claimAccount`/`loginAccount`).
+ * `null` for an unclaimed ghost — callers fall back to `getDisplayName()`.
+ * There's no server "whoami" read for this (`/auth/introspect` returns no
+ * username), so it's the client's own record of the identity it just set.
+ */
+export function getUsername(): string | null {
+  return localStorage.getItem(USERNAME_KEY)
+}
+
+export function setUsername(username: string): void {
+  localStorage.setItem(USERNAME_KEY, username)
 }
 
 /**
