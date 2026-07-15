@@ -19,7 +19,7 @@ function isValidPassword(p: string): boolean {
 
 function claimErrorText(error: string): string {
   if (error === 'username_taken') return 'That username is already taken.'
-  if (error === 'not_ghost') return 'This device already has a claimed account.'
+  if (error === 'not_ghost') return 'This device already has an account.'
   if (error === 'invalid') return 'Enter a valid username and password.'
   return 'Something went wrong — try again.'
 }
@@ -87,7 +87,7 @@ export default function AccountModal({
         const result = await claimAccount(SERVER_URL, usernameInput, passwordInput)
         if (result.ok) {
           setUsername(usernameInput)
-          setSuccess(`Claimed "${usernameInput}" — log in with it on any device.`)
+          setSuccess(`Account created — log in as "${usernameInput}" on any device.`)
           setPasswordInput('') // don't leave the plaintext password lingering in component state
           onIdentityChange?.()
         } else {
@@ -130,14 +130,14 @@ export default function AccountModal({
         <h2 style={{ fontFamily: 'Luckiest Guy', fontSize: 22, marginBottom: 14 }}>Your account</h2>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-          <PillButton active={mode === 'claim'} onClick={() => switchMode('claim')}>Claim your name</PillButton>
+          <PillButton active={mode === 'claim'} onClick={() => switchMode('claim')}>Create account</PillButton>
           <PillButton active={mode === 'login'} onClick={() => switchMode('login')}>Log in</PillButton>
         </div>
 
         <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 12 }}>
           {mode === 'claim'
-            ? 'Pick a username + password to keep your stats when you switch devices.'
-            : 'Already claimed a name? Log in to bring that account to this device.'}
+            ? 'Free, no email — keeps your name and stats on every device. One account works across all V games.'
+            : 'Already have an account? Log in to bring it to this device.'}
         </p>
 
         <input
@@ -171,7 +171,7 @@ export default function AccountModal({
 
         <div style={{ marginTop: 16 }}>
           <Button variant="primary" disabled={!canSubmit} onClick={submit}>
-            {mode === 'claim' ? 'Claim username' : 'Log in to account'}
+            {mode === 'claim' ? 'Create account' : 'Log in to account'}
           </Button>
         </div>
       </div>

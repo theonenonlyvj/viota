@@ -71,7 +71,7 @@ test('the account entry shows the guest display name + a claim nudge when unclai
   renderHome()
   const btn = screen.getByRole('button', { name: /^account/i })
   expect(btn).toHaveTextContent('Guest99')
-  expect(screen.getByText(/claim.*across devices/i)).toBeInTheDocument()
+  expect(screen.getByText(/create account to save/i)).toBeInTheDocument()
 })
 
 test('the account entry shows the claimed username with no nudge once claimed', () => {
@@ -79,7 +79,7 @@ test('the account entry shows the claimed username with no nudge once claimed', 
   renderHome()
   const btn = screen.getByRole('button', { name: /^account/i })
   expect(btn).toHaveTextContent('vijay')
-  expect(screen.queryByText(/claim.*across devices/i)).toBeNull()
+  expect(screen.queryByText(/create account to save/i)).toBeNull()
 })
 
 test('clicking the account entry opens the account modal', async () => {

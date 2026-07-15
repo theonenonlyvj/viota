@@ -68,7 +68,7 @@ export default function Home() {
           >
             <span>{identityLabel}</span>
             {!username && (
-              <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--brand-cyan)' }}>claim to save across devices</span>
+              <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--brand-cyan)' }}>create account to save across devices</span>
             )}
           </button>
         </div>

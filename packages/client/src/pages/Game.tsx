@@ -185,7 +185,7 @@ export default function Game() {
             </button>
             {!getUsername() && (
               <div style={{ marginTop: 12 }}>
-                <Button variant="primary" onClick={() => setAccountOpen(true)}>Save this win — claim your name</Button>
+                <Button variant="primary" onClick={() => setAccountOpen(true)}>Save this win — create an account</Button>
               </div>
             )}
             <button
