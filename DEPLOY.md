@@ -154,4 +154,47 @@ If step 5 shows CORS errors in the browser console, re-check that `CLIENT_ORIGIN
   `wrangler d1 migrations apply viota --remote` **before** `wrangler deploy`
   (code that reads a new column must not ship ahead of the column).
 - **Rotate the JWT secret:** `wrangler secret put JWT_SECRET` (invalidates live
-  tokens; players silently re-auth via their device credential).
+  tokens; players silently re-auth via their device credential). If the
+  **VGames Identity service** is also deployed (next section), rotate JWT_SECRET
+  on **BOTH** services together to the **same** value — they share one token
+  audience, so a mismatch makes tokens minted by one fail on the other.
+
+---
+
+## VGames Identity service (`vgames-identity`)
+
+A **second** Cloudflare Worker service, built from this same `packages/worker`
+package, that serves **only** the VGames Identity surface — `/auth/quick`,
+`/auth/set-credentials`, `/auth/login`, `/auth/introspect`, `/claim`,
+`/admin/merge`, and `GET /health` (`{"service":"vgames-identity"}`). It has **no
+Durable Object, no gameplay, no cron**; it reads/writes the accounts/devices
+tables in the **same D1** as viota-worker. viota-worker keeps serving identity
+too during the transition — both route through the one shared `routeIdentity`
+(`src/identity/router.ts`), so the two deployments can't drift.
+
+Config: `packages/worker/wrangler.identity.toml` (entry `src/identity-entry.ts`,
+same `[[d1_databases]]` block as `wrangler.toml`).
+
+```bash
+# from packages/worker/
+wrangler deploy -c wrangler.identity.toml
+```
+
+**Secrets** (set per service — `-c wrangler.identity.toml`):
+
+```bash
+# from packages/worker/
+openssl rand -base64 32 | wrangler secret put JWT_SECRET -c wrangler.identity.toml
+echo -n "<PAGES_URL>"   | wrangler secret put CLIENT_ORIGIN -c wrangler.identity.toml   # optional; unset => CORS '*'
+# ADMIN_JWT_SECRET only when an admin /merge is actually needed:
+# wrangler secret put ADMIN_JWT_SECRET -c wrangler.identity.toml
+```
+
+- **`JWT_SECRET` MUST equal viota-worker's** so tokens are interchangeable across
+  both services (a token minted by one must verify on the other). Unset, every
+  request fail-closes with 503 (same guard as the main worker).
+- **Rotating `JWT_SECRET` must be done on BOTH services together** to the same
+  new value — players then silently re-auth via their device credential (same as
+  a single-service rotation above). Rotating only one breaks token interchange.
+- No D1 migration step is owned here — the schema lives with viota-worker; this
+  service only reads/writes existing tables in the shared D1.
