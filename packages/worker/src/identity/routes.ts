@@ -47,10 +47,10 @@ export async function handleSetCredentials(request: Request, env: IdentityEnv): 
   const phc = await hashPassword(password)
   try {
     const res = await env.DB.prepare(
-      `UPDATE accounts SET username=?, password_hash=?, status='claimed', claimed_at=?, token_epoch=token_epoch+1
+      `UPDATE accounts SET username=?, display_name=?, password_hash=?, status='claimed', claimed_at=?, token_epoch=token_epoch+1
        WHERE id=? AND status='ghost'`,
     )
-      .bind(username, phc, Date.now(), auth.accountId)
+      .bind(username, username, phc, Date.now(), auth.accountId)
       .run()
     if (!res.meta.changes) return json({ error: 'not_ghost' }, 409) // already claimed/merged
     return json({ ok: true })
