@@ -54,7 +54,9 @@ export function isValidOriginGame(v: unknown): v is OriginGame {
   return typeof v === 'string' && (ORIGIN_GAMES as readonly string[]).includes(v)
 }
 
-export type QuickAccountResult = { accountId: string; isNew: boolean }
+export type QuickAccountResult =
+  | { accountId: string; isNew: boolean }
+  | { error: 'name_reserved' }
 
 /**
  * UPSERT-or-lookup keyed by `credentialHash`, now layered over
@@ -103,6 +105,12 @@ export async function quickAccount(
     await upsertDevice(db, params.credentialHash, existing.id, params.now)
     return { accountId: existing.id, isNew: false }
   }
+
+  const claimedName = await db
+    .prepare('SELECT id FROM accounts WHERE username = lower(?) LIMIT 1')
+    .bind(params.displayName)
+    .first<{ id: string }>()
+  if (claimedName) return { error: 'name_reserved' }
 
   const id = crypto.randomUUID()
   await db
@@ -175,7 +183,7 @@ export async function handleAuthQuick(
   // read defensively and store null when absent, never throw.
   const cf = (request as { cf?: { country?: unknown; region?: unknown; timezone?: unknown } }).cf
   const geo = (v: unknown): string | null => (typeof v === 'string' && v.length > 0 ? v : null)
-  const { accountId } = await quickAccount(env.DB, {
+  const result = await quickAccount(env.DB, {
     credentialHash,
     displayName,
     now: Date.now(),
@@ -184,6 +192,8 @@ export async function handleAuthQuick(
     timezone: geo(cf?.timezone),
     originGame,
   })
+  if ('error' in result) return json({ error: result.error }, 409)
+  const { accountId } = result
   const token = await signToken(accountId, env.JWT_SECRET)
   return json({ token, accountId })
 }

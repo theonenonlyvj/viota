@@ -22,6 +22,14 @@ async function authQuick(deviceCredential: string, displayName: string, game?: s
   })
 }
 
+async function claimAccount(token: string, username: string): Promise<Response> {
+  return SELF.fetch('https://example.com/auth/set-credentials', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ username, password: 'hunter2' }),
+  })
+}
+
 beforeAll(async () => {
   await applyD1Schema(DB())
 })
@@ -48,6 +56,31 @@ describe('POST /auth/quick', () => {
     const a = (await (await authQuick(mintCredential(), 'Twins')).json()) as { accountId: string }
     const b = (await (await authQuick(mintCredential(), 'Twins')).json()) as { accountId: string }
     expect(b.accountId).not.toBe(a.accountId)
+  })
+
+  it('rejects a new guest name that matches a claimed VGames username', async () => {
+    const claimed = (await (await authQuick(mintCredential(), 'Runner Owner')).json()) as { token: string }
+    expect((await claimAccount(claimed.token, 'runner_reserved')).status).toBe(200)
+
+    const response = await authQuick(mintCredential(), 'Runner_Reserved')
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: 'name_reserved' })
+  })
+
+  it('still re-authenticates an existing ghost after its display name becomes reserved', async () => {
+    const existingCredential = mintCredential()
+    const existing = (await (await authQuick(existingCredential, 'Later_Reserved')).json()) as {
+      accountId: string
+    }
+    const owner = (await (await authQuick(mintCredential(), 'Owner')).json()) as { token: string }
+    expect((await claimAccount(owner.token, 'later_reserved')).status).toBe(200)
+
+    const response = await authQuick(existingCredential, 'Later_Reserved')
+    const body = (await response.json()) as { accountId: string }
+
+    expect(response.status).toBe(200)
+    expect(body.accountId).toBe(existing.accountId)
   })
 
   it('sanitizes the display name (strips control/zero-width + HTML metachars)', async () => {
