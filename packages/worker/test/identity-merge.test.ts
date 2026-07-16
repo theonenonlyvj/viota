@@ -64,11 +64,36 @@ describe('mergeAccounts', () => {
     await mkAcct('into3')
     await mkAcct('from3')
     await mkDevice('dh3', 'from3')
-    const res = await mergeAccounts(DB(), 'from3', 'into3', 'admin:vijay', 't', { dryRun: true })
+    const res = await mergeAccounts(DB(), 'from3', 'into3', 'admin:vijay', 't', {
+      dryRun: true,
+      includeAudit: false,
+    })
     expect(res.dryRun).toBe(true)
     const row = await DB().prepare(`SELECT status FROM accounts WHERE id='from3'`).first<{ status: string }>()
     expect(row!.status).toBe('ghost') // unchanged
     expect(res.retagCounts.device_credentials).toBe(1)
+  })
+
+  it('can skip audit-only reads for an automatic login fold without skipping writes', async () => {
+    await mkAcct('into-fast')
+    await mkAcct('from-fast')
+    await mkDevice('dh-fast', 'from-fast')
+
+    const res = await mergeAccounts(DB(), 'from-fast', 'into-fast', 'system:login', 'login-fold', {
+      includeAudit: false,
+    })
+
+    expect(res).toMatchObject({ ok: true, dryRun: false })
+    expect(res.retagCounts).toEqual({})
+    expect(res.selfPlayFlags).toEqual([])
+    const fromRow = await DB()
+      .prepare(`SELECT status, merged_into FROM accounts WHERE id='from-fast'`)
+      .first<{ status: string; merged_into: string }>()
+    expect(fromRow).toMatchObject({ status: 'merged', merged_into: 'into-fast' })
+    const device = await DB()
+      .prepare(`SELECT account_id FROM device_credentials WHERE credential_hash='dh-fast'`)
+      .first<{ account_id: string }>()
+    expect(device!.account_id).toBe('into-fast')
   })
 
   it('flags self-play when both occupy different seats of one game', async () => {
