@@ -106,17 +106,12 @@ export async function quickAccount(
     return { accountId: existing.id, isNew: false }
   }
 
-  const claimedName = await db
-    .prepare('SELECT id FROM accounts WHERE username = lower(?) LIMIT 1')
-    .bind(params.displayName)
-    .first<{ id: string }>()
-  if (claimedName) return { error: 'name_reserved' }
-
   const id = crypto.randomUUID()
   await db
     .prepare(
       `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, country, region, timezone, status, origin_game, last_seen_at)
-       VALUES (?, ?, NULL, ?, ?, ?, ?, ?, 'ghost', ?, ?)
+       SELECT ?, ?, NULL, ?, ?, ?, ?, ?, 'ghost', ?, ?
+       WHERE NOT EXISTS (SELECT 1 FROM accounts WHERE username = lower(?))
        ON CONFLICT(credential_hash) DO NOTHING`,
     )
     .bind(
@@ -129,6 +124,7 @@ export async function quickAccount(
       params.timezone ?? null,
       params.originGame ?? 'iota',
       params.now,
+      params.displayName,
     )
     .run()
 
@@ -136,7 +132,8 @@ export async function quickAccount(
     .prepare('SELECT id FROM accounts WHERE credential_hash = ?')
     .bind(params.credentialHash)
     .first<{ id: string }>()
-  const accountId = row?.id ?? id
+  if (!row) return { error: 'name_reserved' }
+  const accountId = row.id
   const isNew = accountId === id
   // Whichever account id won the race (this insert or a concurrent one), it
   // needs a device row for this credential hash.
