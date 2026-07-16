@@ -153,7 +153,7 @@ export async function handleLogin(request: Request, env: IdentityEnv & { JWT_SEC
     if (priorOwnerId && priorOwnerId !== acc.id) {
       const priorOwner = await env.DB.prepare(`SELECT status FROM accounts WHERE id=?`).bind(priorOwnerId).first<{ status: string }>()
       if (priorOwner?.status === 'ghost') {
-        await mergeAccounts(env.DB, priorOwnerId, acc.id, 'system:login', 'login-fold')
+        await mergeAccounts(env.DB, priorOwnerId, acc.id, 'system:login', 'login-fold', { includeAudit: false })
       }
     }
     await upsertDevice(env.DB, credHash, acc.id, now)

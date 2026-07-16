@@ -24,6 +24,9 @@
  *    admin should look before merging for real.
  *  - `dryRun`: computes `retagCounts`/`selfPlayFlags` with read-only queries
  *    and returns without writing anything.
+ *  - `includeAudit=false`: skips those read-only audit queries for a
+ *    session-bound automatic login fold; the transactional write set is
+ *    unchanged. Dry runs always include the audit.
  */
 import { canonical } from './canonical'
 
@@ -41,9 +44,10 @@ export async function mergeAccounts(
   intoId: string,
   actor: string,
   reason: string,
-  opts: { dryRun?: boolean } = {},
+  opts: { dryRun?: boolean; includeAudit?: boolean } = {},
 ): Promise<MergeResult> {
   const dryRun = !!opts.dryRun
+  const includeAudit = dryRun || opts.includeAudit !== false
 
   const canonInto = await canonical(db, intoId)
   if (!canonInto) return { ok: false, retagCounts: {}, selfPlayFlags: [], dryRun }
@@ -64,26 +68,30 @@ export async function mergeAccounts(
     .first<{ id: string }>()
   if (active) return { ok: true, retagCounts: {}, selfPlayFlags: [], dryRun, noop: true }
 
-  // Self-play: games where fromId and into occupy DIFFERENT seats of the SAME
-  // game (evidence of two distinct humans, not one person's ghost + account).
-  const sp = await db
-    .prepare(
-      `SELECT DISTINCT a.game_uuid AS g FROM game_players a JOIN game_players b
-         ON a.game_uuid=b.game_uuid AND a.seat_index<>b.seat_index
-       WHERE a.account_id=? AND b.account_id=?`,
-    )
-    .bind(fromId, into)
-    .all<{ g: string }>()
-  const selfPlayFlags = sp.results.map((r) => r.g)
+  let selfPlayFlags: string[] = []
+  let retagCounts: Record<string, number> = {}
+  if (includeAudit) {
+    // Self-play: games where fromId and into occupy DIFFERENT seats of the SAME
+    // game (evidence of two distinct humans, not one person's ghost + account).
+    const sp = await db
+      .prepare(
+        `SELECT DISTINCT a.game_uuid AS g FROM game_players a JOIN game_players b
+           ON a.game_uuid=b.game_uuid AND a.seat_index<>b.seat_index
+         WHERE a.account_id=? AND b.account_id=?`,
+      )
+      .bind(fromId, into)
+      .all<{ g: string }>()
+    selfPlayFlags = sp.results.map((r) => r.g)
 
-  const countOf = async (table: string): Promise<number> => {
-    const r = await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE account_id=?`).bind(fromId).first<{ n: number }>()
-    return r?.n ?? 0
-  }
-  const retagCounts = {
-    device_credentials: await countOf('device_credentials'),
-    game_players: await countOf('game_players'),
-    external_identities: await countOf('external_identities'),
+    const countOf = async (table: string): Promise<number> => {
+      const r = await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE account_id=?`).bind(fromId).first<{ n: number }>()
+      return r?.n ?? 0
+    }
+    retagCounts = {
+      device_credentials: await countOf('device_credentials'),
+      game_players: await countOf('game_players'),
+      external_identities: await countOf('external_identities'),
+    }
   }
 
   if (dryRun) return { ok: true, retagCounts, selfPlayFlags, dryRun: true }
