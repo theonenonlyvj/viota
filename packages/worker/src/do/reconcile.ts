@@ -2,7 +2,8 @@
  * Merge reconciler (identity code/data split, A1) — pull-based, run from
  * viota-worker's existing 1-minute cron (`scheduled` in `src/index.ts`).
  *
- * Identity (`identity/merge.ts`) records a merge in `account_merges`
+ * Identity (`vgames-platform/services/identity/src/identity/merge.ts`, Step 3)
+ * records a merge in `account_merges`
  * (IDENTITY_DB) and NEVER touches game tables (A9). Each game reconciles that
  * merge into its OWN store by PULLING: every sweep reads every currently
  * ACTIVE merge edge (`account_merges WHERE superseded_by IS NULL`) and

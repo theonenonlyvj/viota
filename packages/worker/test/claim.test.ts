@@ -2,6 +2,7 @@ import { SELF, env } from 'cloudflare:test'
 import { it, expect, describe, beforeAll } from 'vitest'
 import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { hashCredential } from '../src/d1/accounts'
+import { mintQuickAccount } from './helpers'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
 const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
@@ -11,14 +12,13 @@ function mintCredential(): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-/** Create a quick account, returning its token + accountId. */
+/** Create a quick account bound to `cred`, returning its token + accountId.
+ *  Identity code/data split (Step 3): `/auth/quick` is now a network proxy on
+ *  viota-worker (see src/index.ts) — seed the account directly instead (the
+ *  presented credential must still be `cred` since the caller derives its
+ *  ghost id from it below). See `mintQuickAccount`'s doc comment. */
 async function quickAccount(cred: string, name: string): Promise<{ token: string; accountId: string }> {
-  const res = await SELF.fetch('https://example.com/auth/quick', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceCredential: cred, displayName: name }),
-  })
-  return (await res.json()) as { token: string; accountId: string }
+  return mintQuickAccount(IDENTITY_DB(), name, { credential: cred })
 }
 
 /** Seed a solo ghost game_players row keyed by ghost_id (= hash of the device cred). */

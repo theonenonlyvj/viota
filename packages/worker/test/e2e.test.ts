@@ -10,6 +10,7 @@ import { markDisconnected } from '../src/do/presence'
 import { setTimer, clearTimer, rearmAlarm } from '../src/do/timers'
 import { GLOBAL_SEAT } from '../src/do/constants'
 import type { MovePayload } from '../src/do/moves'
+import { mintQuickAccount } from './helpers'
 
 /**
  * THE flagship end-to-end confidence test (Phase 7). Drives the WHOLE online
@@ -32,15 +33,12 @@ beforeAll(async () => {
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` })
 const jsonHeaders = (token: string) => ({ 'content-type': 'application/json', ...bearer(token) })
 
-/** Mint a real account+token through POST /auth/quick with a distinct device credential. */
+/** Mint a real account+token with a distinct device credential. Identity
+ *  code/data split (Step 3): `/auth/quick` is now a network proxy on
+ *  viota-worker (see src/index.ts) — seed the account directly instead. See
+ *  `mintQuickAccount`'s doc comment in ./helpers. */
 async function quickAuth(displayName: string): Promise<{ token: string; accountId: string }> {
-  const res = await SELF.fetch('https://viota.example.com/auth/quick', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceCredential: `${crypto.randomUUID()}-${crypto.randomUUID()}`, displayName }),
-  })
-  expect(res.status).toBe(200)
-  return (await res.json()) as { token: string; accountId: string }
+  return mintQuickAccount(IDENTITY_DB(), displayName)
 }
 
 /** Read the live turn + a legal medium-AI move for the current seat, server-side. */

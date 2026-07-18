@@ -27,8 +27,9 @@ export interface Env {
    *  Step 4 flips only the target). Game code reads identity through this
    *  binding (canonicalization, name lookups, merge reconciliation) and NEVER
    *  writes it (see identity/authctx.ts, stats/*, do/reconcile.ts) — the
-   *  identity SERVICE (src/identity-entry.ts, wrangler.identity.toml) owns
-   *  writes to its own `DB` binding. */
+   *  identity SERVICE (`vgames-platform/services/identity/`, Step 3 — deploys
+   *  as the standalone `vgames-identity` worker) owns writes to its own `DB`
+   *  binding, which points at this SAME database. */
   IDENTITY_DB: D1Database
   /** The exact browser origin allowed by CORS (the Cloudflare Pages URL). Set in
    *  prod via `[vars]` or `wrangler secret put CLIENT_ORIGIN`. Unset only in

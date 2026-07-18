@@ -100,7 +100,8 @@ export const GAME_SCHEMA_STATEMENTS: readonly string[] = [
      AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
    GROUP BY a.id`,
   // Merge reconciler self-play flags (migration 0005) — game-domain data; see
-  // do/reconcile.ts + identity/merge.ts.
+  // do/reconcile.ts (this repo) + the hub's identity/merge.ts (which records
+  // the merge these flags react to).
   `CREATE TABLE IF NOT EXISTS merge_selfplay_flags (
      game_uuid   TEXT NOT NULL,
      from_id     TEXT NOT NULL,
@@ -112,8 +113,9 @@ export const GAME_SCHEMA_STATEMENTS: readonly string[] = [
 
 /** accounts/device_credentials/account_merges/external_identities — the
  *  VGames identity store. Lives on the `IDENTITY_DB` binding from game code's
- *  perspective (see identity/authctx.ts); the identity SERVICE's own `DB`
- *  binding points at the same data (wrangler.identity.toml). */
+ *  perspective (see identity/authctx.ts); the identity SERVICE (Step 3 —
+ *  `vgames-platform/services/identity/`, its own copy of this schema) has its
+ *  own `DB` binding pointing at the same data. */
 export const IDENTITY_SCHEMA_STATEMENTS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS accounts (
      id                  TEXT PRIMARY KEY,

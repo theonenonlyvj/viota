@@ -5,6 +5,7 @@ import type { MovePayload } from '../src/do/moves'
 import type { SeatOwner } from '../src/do/init'
 import { runMigrations, GameRepository, type SqlLike } from '../src/do/storage'
 import { signToken } from '../src/jwt'
+import { hashCredential, sanitizeDisplayName } from '../src/d1/accounts'
 
 // The vitest miniflare binding (vitest.config.ts) injects exactly this secret.
 export const TEST_JWT_SECRET = 'test-jwt-secret-0123456789-abcdefghijklmnop'
@@ -17,6 +18,35 @@ export function mintToken(accountId: string): Promise<string> {
 /** `{ Authorization: 'Bearer <token>' }` for an account — the auth header. */
 export async function authHeaders(accountId: string): Promise<Record<string, string>> {
   return { Authorization: `Bearer ${await mintToken(accountId)}` }
+}
+
+/**
+ * TEST-ONLY: mint an account row directly in IDENTITY_DB + a legacy Bearer
+ * token for it — mirrors what `POST /auth/quick` used to do locally, before
+ * the identity code/data split (Step 3) turned that route into a
+ * network proxy to `vgames-identity` (which the sandboxed vitest-pool-workers
+ * runtime can't reach). Behavior-level coverage of `/auth/quick` itself now
+ * lives in the hub package (`vgames-platform/services/identity/`); game-domain
+ * tests here only need a valid canonical account + token to authenticate as.
+ */
+export async function mintQuickAccount(
+  identityDb: D1Database,
+  displayName: string,
+  opts: { credential?: string } = {},
+): Promise<{ token: string; accountId: string; credential: string }> {
+  const credential = opts.credential ?? `${crypto.randomUUID()}${crypto.randomUUID()}`
+  const credentialHash = await hashCredential(credential)
+  const accountId = crypto.randomUUID()
+  const now = Date.now()
+  await identityDb
+    .prepare(
+      `INSERT INTO accounts (id, credential_hash, username, display_name, created_at, status, token_epoch, origin_game, must_change_pw, login_fail_count, last_seen_at)
+       VALUES (?, ?, NULL, ?, ?, 'ghost', 0, 'iota', 0, 0, ?)`,
+    )
+    .bind(accountId, credentialHash, sanitizeDisplayName(displayName), now, now)
+    .run()
+  const token = await mintToken(accountId)
+  return { token, accountId, credential }
 }
 
 /**

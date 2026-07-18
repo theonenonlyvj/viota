@@ -168,61 +168,49 @@ If step 5 shows CORS errors in the browser console, re-check that `CLIENT_ORIGIN
 
 ## VGames Identity service (`vgames-identity`)
 
-A **second** Cloudflare Worker service, built from this same `packages/worker`
-package, that serves **only** the VGames Identity surface — `/auth/quick`,
-`/auth/set-credentials`, `/auth/login`, `/auth/introspect`,
-`/admin/merge`, and `GET /health` (`{"service":"vgames-identity"}`). It has **no
-Durable Object, no gameplay, no cron**; it reads/writes the accounts/devices
-tables in the **same D1** as viota-worker. viota-worker keeps serving identity
-too during the transition — both route through the one shared `routeIdentity`
-(`src/identity/router.ts`), so they share **source**, not runtime. They are
-two **separately deployed** services, so they drift by **deploy time**:
-whichever was deployed most recently reflects the current code; the other
-runs whatever was live at its last `wrangler deploy` until it gets one too.
-(This actually happened 2026-07-16: `vgames-identity` picked up a
-guest-name-reservation change that `viota-worker` didn't get until later.)
-
-**`POST /claim` moved OFF the identity surface** (identity code/data split,
-Step 2): it re-tags viota's OWN `game_players` (a game-domain op), so it now
-lives in `src/index.ts`'s own routing on **viota-worker only** — `d1/claim.ts`
-is no longer part of the shared `routeIdentity` router and is **not** served
-by `vgames-identity`. The client still calls it on the game URL; no client
-change. viota-worker also gained a second D1 binding, `IDENTITY_DB` (see
-`wrangler.toml`), through which game code (stats routes, the merge
-reconciler, `/claim`) reads identity data read-only — `vgames-identity`
-itself is unaffected (its own `DB` binding already IS the identity data).
-
-**Deploy-both rule:** any change touching `packages/worker/src/identity/`,
-`src/d1/accounts.ts`, `src/d1/devices.ts`, `src/jwt.ts`, `src/cors.ts`, or
-`src/auth.ts` must be deployed to **both** `viota-worker` and
-`vgames-identity` in the same session — leaving one behind means they share a
-JWT secret/audience (tokens still interchange) but diverge in behavior until
-the laggard catches up. `src/d1/claim.ts` and `src/do/reconcile.ts` are
-viota-worker-only now (not shared with `vgames-identity`) — see above.
-
-Config: `packages/worker/wrangler.identity.toml` (entry `src/identity-entry.ts`,
-same `[[d1_databases]]` block as `wrangler.toml`).
+**Moved out of this repo (identity code/data split, Step 3).** The real
+identity surface — `/auth/quick`, `/auth/set-credentials`, `/auth/login`,
+`/auth/introspect`, `/admin/merge`, `GET /health` — now lives in the platform
+hub repo at `vgames-platform/services/identity/` and deploys as its own
+standalone Cloudflare Worker service, `vgames-identity`. It has **no** Durable
+Object, no gameplay, no cron; it reads/writes the accounts/devices tables in
+the **same D1** viota-worker uses (`database_id` matches `wrangler.toml`'s
+`DB`/`IDENTITY_DB` here — Step 4 of the split, not yet done, is what actually
+moves the data to its own D1). Deploy it from the hub:
 
 ```bash
-# from packages/worker/
-wrangler deploy -c wrangler.identity.toml
+# from vgames-platform/services/identity/
+wrangler deploy
 ```
 
-**Secrets** (set per service — `-c wrangler.identity.toml`):
+**`vgames-identity`'s worker NAME must stay exactly `vgames-identity`** — a
+Cloudflare service binding (vwiki-race) targets it by name, not hostname.
+Same-name in-place redeploys only, never `wrangler delete` + recreate.
 
-```bash
-# from packages/worker/
-openssl rand -base64 32 | wrangler secret put JWT_SECRET -c wrangler.identity.toml
-echo -n "<PAGES_URL>"   | wrangler secret put CLIENT_ORIGIN -c wrangler.identity.toml   # optional; unset => CORS '*'
-# ADMIN_JWT_SECRET only when an admin /merge is actually needed:
-# wrangler secret put ADMIN_JWT_SECRET -c wrangler.identity.toml
-```
+**viota-worker no longer serves identity locally.** It keeps a thin
+GRACE-WINDOW PROXY for exactly `/auth/quick|login|set-credentials|introspect`
+(forwards to `vgames-identity`'s public URL, relays the response verbatim —
+see the `GRACE_PROXY_PATHS`/`proxyToIdentity` block at the top of
+`src/index.ts`'s router) so a stale open tab / cached client bundle still
+calling viota-worker's own origin keeps working for a while. The client
+itself already calls `vgames-identity` directly (`authUrl()`, `net/config.ts`)
+— the proxy is a safety net, not a load-bearing path, and carries a dated
+TODO to delete it. `POST /admin/merge` is **not** proxied — it's dropped
+(404); admin flows target `vgames-identity` directly.
 
-- **`JWT_SECRET` MUST equal viota-worker's** so tokens are interchangeable across
-  both services (a token minted by one must verify on the other). Unset, every
-  request fail-closes with 503 (same guard as the main worker).
-- **Rotating `JWT_SECRET` must be done on BOTH services together** to the same
-  new value — players then silently re-auth via their device credential (same as
-  a single-service rotation above). Rotating only one breaks token interchange.
-- No D1 migration step is owned here — the schema lives with viota-worker; this
-  service only reads/writes existing tables in the shared D1.
+viota-worker keeps a second D1 binding, `IDENTITY_DB` (see `wrangler.toml`),
+through which its own game code (stats routes, the merge reconciler,
+`GET /admin/merge-audit`, `/claim`) reads identity data READ-ONLY — never
+writes it (see `test/write-discipline.test.ts`). It also keeps a small,
+stable **verify module** (`src/jwt.ts`, `src/identity/authctx.ts`,
+`src/identity/canonical.ts`, `src/identity/admin.ts` — roughly 150 lines):
+identity SIGNS tokens now (only in the hub); every consumer game VERIFIES
+them locally. A JWT claim-shape change is a two-repo change gated by the
+checked-in token-fixture contract (`test/fixtures/token-contract.json`,
+identical in both repos — see `test/token-contract.test.ts`).
+
+Secrets, rotation procedure, and the full deploy matrix now live in the hub's
+`docs/OPS-RUNBOOK.md` — this repo no longer owns any identity-service secrets
+or deploy commands beyond viota-worker's own `JWT_SECRET`/`CLIENT_ORIGIN`
+(still needed here so the proxy's `assertSecret` guard and the verify module
+work).
