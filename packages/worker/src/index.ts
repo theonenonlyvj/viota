@@ -6,6 +6,7 @@ import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do
 import { reconcileMerges } from './do/reconcile'
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
+import { handleAdminMergeAudit } from './stats/adminMergeAudit'
 import { handleLeaderboard } from './stats/leaderboard'
 import { handleMeStats } from './stats/me-stats'
 import { handleGamesReport } from './stats/report'
@@ -86,6 +87,15 @@ async function route(request: Request, env: Env): Promise<Response> {
     // step-up gate as /admin/merge (ADMIN_JWT_SECRET, aud:'vgames-admin').
     if (request.method === 'POST' && path === '/admin/backfill-stats') {
       return handleAdminBackfillStats(request, env)
+    }
+
+    // GET /admin/merge-audit?from=&into= -> identity code/data split (A6): the
+    // game-domain half of the pre-merge audit (selfPlayFlags the reconciler
+    // has recorded + live game_players counts), from viota's OWN D1. Same
+    // ADMIN_JWT_SECRET step-up gate as /admin/merge (on vgames-identity) and
+    // /admin/backfill-stats.
+    if (request.method === 'GET' && path === '/admin/merge-audit') {
+      return handleAdminMergeAudit(request, env)
     }
 
     // GET /leaderboard?game=iota&board=<key> -> Phase 5 (Task 9): ranked board
