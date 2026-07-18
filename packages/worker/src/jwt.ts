@@ -27,8 +27,16 @@ function keyFor(secret: string): Uint8Array {
  * `now` (ms) is injectable for deterministic tests (e.g. mint an already-expired
  * token by passing a `now` in the past). In production it is omitted, and the
  * pinned relative `'24h'` expiry is used off the real clock.
+ *
+ * `ttlSeconds` (only consulted when `now` is also given) overrides the pinned
+ * 24h TTL — used ONLY by the token-fixture generator (A7,
+ * `test/fixtures/generate-token-contract.ts`) to mint a checked-in "valid"
+ * fixture that stays valid for the fixture's whole shelf life, not just 24h
+ * from generation, while still going through the REAL signing code path (so
+ * a future claim-shape change is caught by regenerating the fixture, not
+ * silently missed by a hand-rolled token). Never used by production code.
  */
-export async function signToken(accountId: string, secret: string, now?: number): Promise<string> {
+export async function signToken(accountId: string, secret: string, now?: number, ttlSeconds: number = TTL_SECONDS): Promise<string> {
   const builder = new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(accountId)
@@ -38,7 +46,7 @@ export async function signToken(accountId: string, secret: string, now?: number)
     builder.setIssuedAt().setExpirationTime('24h')
   } else {
     const iat = Math.floor(now / 1000)
-    builder.setIssuedAt(iat).setExpirationTime(iat + TTL_SECONDS)
+    builder.setIssuedAt(iat).setExpirationTime(iat + ttlSeconds)
   }
   return builder.sign(keyFor(secret))
 }
@@ -81,7 +89,7 @@ const VG_TTL_SECONDS = 60 * 60 // 1h
 export async function signVGamesToken(
   p: { accountId: string; status: string; epoch: number },
   secret: string,
-  opts: { iss?: string; aud?: string; now?: number } = {},
+  opts: { iss?: string; aud?: string; now?: number; ttlSeconds?: number } = {},
 ): Promise<string> {
   const iat = Math.floor((opts.now ?? Date.now()) / 1000)
   return new SignJWT({ status: p.status, epoch: p.epoch })
@@ -90,7 +98,7 @@ export async function signVGamesToken(
     .setIssuer(opts.iss ?? VGAMES_ISS)
     .setAudience(opts.aud ?? VGAMES_AUD)
     .setIssuedAt(iat)
-    .setExpirationTime(iat + VG_TTL_SECONDS)
+    .setExpirationTime(iat + (opts.ttlSeconds ?? VG_TTL_SECONDS))
     .sign(keyFor(secret))
 }
 
