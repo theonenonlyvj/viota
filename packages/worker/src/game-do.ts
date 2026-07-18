@@ -31,6 +31,12 @@ export interface Env {
    *  as the standalone `vgames-identity` worker) owns writes to its own `DB`
    *  binding, which points at this SAME database. */
   IDENTITY_DB: D1Database
+  /** Service binding to the `vgames-identity` worker — transport for the
+   *  grace-window auth proxy in index.ts (worker->worker HTTP to *.workers.dev
+   *  is restricted; a binding is the sanctioned path). Optional: absent in
+   *  tests/local dev (the proxy falls back to plain fetch there). Dies with
+   *  the grace proxy (~2026-07-20). */
+  IDENTITY_SVC?: Fetcher
   /** The exact browser origin allowed by CORS (the Cloudflare Pages URL). Set in
    *  prod via `[vars]` or `wrangler secret put CLIENT_ORIGIN`. Unset only in
    *  local dev, where CORS falls back to a permissive `*`. See `src/cors.ts`. */

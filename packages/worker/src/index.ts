@@ -78,12 +78,23 @@ const IDENTITY_ORIGIN = 'https://vgames-identity.theonenonlyvj.workers.dev'
  *  the caller's `withCors` (see `fetch` below) re-applies viota-worker's OWN
  *  `CLIENT_ORIGIN` policy on top, so the browser sees one consistent CORS
  *  story regardless of which worker actually answered. */
-async function proxyToIdentity(request: Request, path: string, search: string): Promise<Response> {
+async function proxyToIdentity(
+  request: Request,
+  path: string,
+  search: string,
+  identitySvc?: { fetch(input: Request | string, init?: RequestInit): Promise<Response> },
+): Promise<Response> {
   const upstreamUrl = `${IDENTITY_ORIGIN}${path}${search}`
   const headers = new Headers(request.headers)
   headers.delete('host')
   const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
-  return fetch(upstreamUrl, { method: request.method, headers, body })
+  const init = { method: request.method, headers, body }
+  // Worker->worker HTTP to *.workers.dev is restricted (proved live 2026-07-18:
+  // the plain fetch died with a Cloudflare error page) — the service binding is
+  // the sanctioned transport. Plain fetch remains ONLY as the local-dev/test
+  // fallback where the binding is absent.
+  if (identitySvc) return identitySvc.fetch(new Request(upstreamUrl, init))
+  return fetch(upstreamUrl, init)
 }
 
 /**
@@ -97,7 +108,7 @@ async function route(request: Request, env: Env): Promise<Response> {
   const path = url.pathname
 
     if (GRACE_PROXY_PATHS.has(path)) {
-      return proxyToIdentity(request, path, url.search)
+      return proxyToIdentity(request, path, url.search, env.IDENTITY_SVC)
     }
 
     // POST /claim -> claim device ghost games into the authed account. A

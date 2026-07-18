@@ -1,107 +1,61 @@
 import { SELF } from 'cloudflare:test'
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 
 /**
- * Identity code/data split, Step 3 (A2/2b) — viota-worker no longer serves
- * `/auth/*` locally: it's a thin GRACE-WINDOW proxy to `vgames-identity` (see
- * `proxyToIdentity`/`GRACE_PROXY_PATHS` in src/index.ts). These tests mock
- * `fetch` and assert the proxy forwards method/headers/body to the upstream
- * service and relays its response VERBATIM (status + body) for exactly the
- * four proxied paths — and that `/admin/merge` is DROPPED, not proxied.
- *
- * Mocking `fetch` works here because `SELF` (the main worker under test) runs
- * in the SAME isolate as this test file (vitest-pool-workers: "any global
- * mocks will apply to it too") — `vi.stubGlobal` on `fetch` is visible inside
- * the worker's own `fetch()` handler.
+ * Grace-window auth proxy (split Step 3 / A2-2b): viota-worker forwards the four
+ * /auth/* routes to the `vgames-identity` worker over the IDENTITY_SVC SERVICE
+ * BINDING (worker->worker HTTP to *.workers.dev is restricted — proven live
+ * 2026-07-18). In tests the binding is an ECHO stub (vitest.config.ts) that
+ * reflects method/path/body and honors `x-stub-status`, so these tests assert
+ * the proxy forwards faithfully through the REAL binding code path.
+ * Remove with the proxy (~2026-07-20).
  */
 
-const UPSTREAM = 'https://vgames-identity.theonenonlyvj.workers.dev'
+const PROXIED = ['/auth/quick', '/auth/login', '/auth/set-credentials', '/auth/introspect']
 
-afterEach(() => {
-  vi.unstubAllGlobals()
-})
-
-describe('identity grace-window proxy (Step 3)', () => {
-  it('forwards POST /auth/quick to vgames-identity, preserving method/headers/body, and relays the response verbatim', async () => {
-    const upstreamBody = { token: 'upstream-token', accountId: 'upstream-acct-1' }
-    const calls: { url: string; method: string; headers: Headers; body: string }[] = []
-    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      calls.push({
-        url: String(input),
-        method: init?.method ?? 'GET',
-        headers: new Headers(init?.headers),
-        body: init?.body ? new TextDecoder().decode(init.body as ArrayBuffer) : '',
-      })
-      return new Response(JSON.stringify(upstreamBody), { status: 200, headers: { 'content-type': 'application/json' } })
-    })
-    vi.stubGlobal('fetch', mockFetch)
-
-    const res = await SELF.fetch('https://example.com/auth/quick', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'X-Test-Header': 'yes' },
-      body: JSON.stringify({ deviceCredential: 'x'.repeat(32), displayName: 'Proxy Test' }),
-    })
-
-    expect(calls).toHaveLength(1)
-    expect(calls[0]!.url).toBe(`${UPSTREAM}/auth/quick`)
-    expect(calls[0]!.method).toBe('POST')
-    expect(calls[0]!.headers.get('x-test-header')).toBe('yes')
-    expect(JSON.parse(calls[0]!.body)).toEqual({ deviceCredential: 'x'.repeat(32), displayName: 'Proxy Test' })
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(upstreamBody)
-  })
-
-  it.each(['/auth/login', '/auth/set-credentials', '/auth/introspect'])(
-    'forwards POST %s to vgames-identity',
-    async (path) => {
-      const mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }))
-      vi.stubGlobal('fetch', mockFetch)
-
+describe('identity grace-window proxy (Step 3, via IDENTITY_SVC binding)', () => {
+  it('forwards each proxied route with method/path/body intact', async () => {
+    for (const path of PROXIED) {
+      const payload = JSON.stringify({ probe: path })
       const res = await SELF.fetch(`https://example.com${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({}),
+        body: payload,
       })
-
-      expect(mockFetch).toHaveBeenCalledTimes(1)
-      expect(mockFetch.mock.calls[0]![0]).toBe(`${UPSTREAM}${path}`)
       expect(res.status).toBe(200)
-    },
-  )
+      const echoed = (await res.json()) as { via: string; method: string; path: string; body: string }
+      expect(echoed.via).toBe('identity_svc_stub')
+      expect(echoed.method).toBe('POST')
+      expect(echoed.path).toBe(path)
+      expect(echoed.body).toBe(payload)
+    }
+  })
 
-  it('relays a non-200 upstream status + body verbatim (e.g. 401 invalid_credentials)', async () => {
-    const mockFetch = vi.fn(async () => new Response(JSON.stringify({ error: 'invalid_credentials' }), { status: 401 }))
-    vi.stubGlobal('fetch', mockFetch)
-
+  it('relays a non-200 upstream status + body verbatim', async () => {
     const res = await SELF.fetch('https://example.com/auth/login', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: 'nope', password: 'wrong' }),
+      headers: { 'content-type': 'application/json', 'x-stub-status': '401' },
+      body: JSON.stringify({ username: 'nope', password: 'wrong', deviceCredential: 'x' }),
     })
     expect(res.status).toBe(401)
-    expect(await res.json()).toEqual({ error: 'invalid_credentials' })
+    expect(((await res.json()) as { via: string }).via).toBe('identity_svc_stub')
   })
 
-  it('answers CORS preflight (OPTIONS) locally — never proxied', async () => {
-    const mockFetch = vi.fn(async () => new Response('should not be called'))
-    vi.stubGlobal('fetch', mockFetch)
-
-    const res = await SELF.fetch('https://example.com/auth/quick', { method: 'OPTIONS' })
-    expect(res.status).toBe(204)
-    expect(mockFetch).not.toHaveBeenCalled()
-  })
-
-  it('POST /admin/merge is DROPPED (not proxied) — 404 not_found, upstream never called', async () => {
-    const mockFetch = vi.fn(async () => new Response('should not be called'))
-    vi.stubGlobal('fetch', mockFetch)
-
-    const res = await SELF.fetch('https://example.com/admin/merge', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({}),
+  it('answers CORS preflight locally — never proxied', async () => {
+    const res = await SELF.fetch('https://example.com/auth/quick', {
+      method: 'OPTIONS',
+      headers: { origin: 'https://viota.pages.dev', 'access-control-request-method': 'POST' },
     })
-    expect(res.status).toBe(404)
-    expect(mockFetch).not.toHaveBeenCalled()
+    expect(res.status).toBe(204)
+    expect(res.headers.get('access-control-allow-origin')).toBeTruthy()
+    // preflight never reaches the stub (its body would say identity_svc_stub)
+    expect(await res.text()).toBe('')
+  })
+
+  it('does NOT proxy /admin/merge (dropped from viota-worker) or /claim (game-domain, served locally)', async () => {
+    const admin = await SELF.fetch('https://example.com/admin/merge', { method: 'POST', body: '{}' })
+    expect(admin.status).toBe(404)
+    const claim = await SELF.fetch('https://example.com/claim', { method: 'POST', body: '{}' })
+    expect([400, 401]).toContain(claim.status) // served LOCALLY (auth/shape error), not echoed by the stub
   })
 })
