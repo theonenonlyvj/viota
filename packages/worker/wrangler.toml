@@ -35,12 +35,15 @@ database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 # the split (data split) changes only the database_id here (to the new
 # standalone `vgames-identity` D1) — no code changes at that point.
 #
-# Locally/in tests, vitest-pool-workers provisions this as a SEPARATE local D1
-# from DB (Miniflare keys local storage by binding name, not database_id) —
-# that is DESIRABLE: it makes every test exercise the POST-SPLIT access
-# pattern (two independent stores) even though production is still one
-# physical database until Step 4. See src/d1/schema.ts (applyGameSchema /
-# applyIdentitySchema) and test/helpers.ts.
+# ⚠ Locally/in tests, vitest-pool-workers 0.18.x keys local D1 storage by
+# database_id, NOT binding name — so DB and IDENTITY_DB alias ONE local store
+# (verified empirically 2026-07-18: a row written via DB reads back via
+# IDENTITY_DB with no schema applied there). The green suite therefore does
+# NOT structurally prove a two-store split; the A9 write-discipline guard
+# (Proxy on the binding, test/write-discipline.test.ts) is the check that is
+# independent of this aliasing. Step-4 planning MUST NOT assume tests
+# exercised separate stores — verify the split LIVE at cutover (§5 of the
+# split design). See src/d1/schema.ts (applyGameSchema/applyIdentitySchema).
 [[d1_databases]]
 binding = "IDENTITY_DB"
 database_name = "viota"
