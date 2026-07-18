@@ -3,11 +3,14 @@ import { it, expect, describe, beforeAll } from 'vitest'
 import worker from '../src/index'
 import { GameRepository, type SqlLike } from '../src/do/storage'
 import { applyAndPersist } from '../src/do/apply'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { ABANDON_MS, WAITING_ABANDON_MS } from '../src/do/constants'
 import { seedScriptedGame } from './helpers'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+// the scheduled() handler's merge reconciler pass reads account_merges from
+// IDENTITY_DB every sweep (do/reconcile.ts) — needs the identity schema too.
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 function stubFor(name: string) {
   return env.GAME_DO.get(env.GAME_DO.idFromName(name))
@@ -24,7 +27,8 @@ async function runCron(): Promise<void> {
 }
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 describe('cron sweep -> DO /tick', () => {

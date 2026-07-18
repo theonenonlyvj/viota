@@ -3,6 +3,7 @@ import { GameDO, type Env } from './game-do'
 import { routeIdentity } from './identity/router'
 import { handleClaim } from './d1/claim'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
+import { reconcileMerges } from './do/reconcile'
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
 import { handleLeaderboard } from './stats/leaderboard'
@@ -287,18 +288,25 @@ export default {
   },
 
   /**
-   * Cron sweep (1-min trigger) over the lobby-registry index. Two passes:
+   * Cron sweep (1-min trigger) over the lobby-registry index. Three passes:
    *  - stale ACTIVE games (`last_activity_at < now - ABANDON_MS`) → poke each
    *    DO's `/tick`, which re-drives/abandons it and drains unflushed archive
    *    rows (the DO's heal path owns the real 7-day abandon decision);
    *  - stale WAITING rooms (made but never started,
    *    `last_activity_at < now - WAITING_ABANDON_MS`) → mark them 'abandoned' in
-   *    D1 (so they drop out of resolve-by-code) and poke `/tick` to freeze.
+   *    D1 (so they drop out of resolve-by-code) and poke `/tick` to freeze;
+   *  - the merge reconciler (identity code/data split, A1): re-tag viota's own
+   *    `game_players` for every currently-active IDENTITY_DB merge, every
+   *    sweep, no watermark (see do/reconcile.ts). Awaited (not
+   *    ctx.waitUntil'd) so a reconciler failure surfaces in the scheduled
+   *    invocation's own error/retry semantics rather than silently vanishing.
    * Lightweight: two indexed D1 queries + a fire-and-forget poke per stale game.
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (assertSecret(env)) return // fail-closed if misconfigured
     const now = Date.now()
+
+    await reconcileMerges(env.DB, env.IDENTITY_DB, now)
 
     const active = await env.DB.prepare(
       `SELECT game_uuid FROM games WHERE status = 'active' AND last_activity_at < ?`,
