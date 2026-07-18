@@ -36,6 +36,11 @@ database_name = "viota"
 database_id = "PASTE-THE-REAL-ID-HERE"   # was "local-dev-placeholder"
 ```
 
+`wrangler.toml` also has a SECOND `[[d1_databases]]` block, binding
+`IDENTITY_DB`, with the SAME `database_id` (identity code/data split, Step 1
+— two bindings, one DB, on purpose; see the block's own comment). Paste the
+same real id there too — do not leave it on a stale/placeholder value.
+
 ## 2. Apply the D1 schema
 
 ```bash
@@ -165,7 +170,7 @@ If step 5 shows CORS errors in the browser console, re-check that `CLIENT_ORIGIN
 
 A **second** Cloudflare Worker service, built from this same `packages/worker`
 package, that serves **only** the VGames Identity surface — `/auth/quick`,
-`/auth/set-credentials`, `/auth/login`, `/auth/introspect`, `/claim`,
+`/auth/set-credentials`, `/auth/login`, `/auth/introspect`,
 `/admin/merge`, and `GET /health` (`{"service":"vgames-identity"}`). It has **no
 Durable Object, no gameplay, no cron**; it reads/writes the accounts/devices
 tables in the **same D1** as viota-worker. viota-worker keeps serving identity
@@ -177,12 +182,23 @@ runs whatever was live at its last `wrangler deploy` until it gets one too.
 (This actually happened 2026-07-16: `vgames-identity` picked up a
 guest-name-reservation change that `viota-worker` didn't get until later.)
 
+**`POST /claim` moved OFF the identity surface** (identity code/data split,
+Step 2): it re-tags viota's OWN `game_players` (a game-domain op), so it now
+lives in `src/index.ts`'s own routing on **viota-worker only** — `d1/claim.ts`
+is no longer part of the shared `routeIdentity` router and is **not** served
+by `vgames-identity`. The client still calls it on the game URL; no client
+change. viota-worker also gained a second D1 binding, `IDENTITY_DB` (see
+`wrangler.toml`), through which game code (stats routes, the merge
+reconciler, `/claim`) reads identity data read-only — `vgames-identity`
+itself is unaffected (its own `DB` binding already IS the identity data).
+
 **Deploy-both rule:** any change touching `packages/worker/src/identity/`,
-`src/d1/accounts.ts`, `src/d1/claim.ts`, `src/d1/devices.ts`, `src/jwt.ts`,
-`src/cors.ts`, or `src/auth.ts` must be deployed to **both** `viota-worker`
-and `vgames-identity` in the same session — leaving one behind means they
-share a JWT secret/audience (tokens still interchange) but diverge in
-behavior until the laggard catches up.
+`src/d1/accounts.ts`, `src/d1/devices.ts`, `src/jwt.ts`, `src/cors.ts`, or
+`src/auth.ts` must be deployed to **both** `viota-worker` and
+`vgames-identity` in the same session — leaving one behind means they share a
+JWT secret/audience (tokens still interchange) but diverge in behavior until
+the laggard catches up. `src/d1/claim.ts` and `src/do/reconcile.ts` are
+viota-worker-only now (not shared with `vgames-identity`) — see above.
 
 Config: `packages/worker/wrangler.identity.toml` (entry `src/identity-entry.ts`,
 same `[[d1_databases]]` block as `wrangler.toml`).
