@@ -1,6 +1,6 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { authHeaders } from './helpers'
 
 /**
@@ -12,17 +12,23 @@ import { authHeaders } from './helpers'
  * endpoint is a GLOBAL ranking, so "is my row correct / in the right
  * relative order / present-or-absent" is the robust, meaningful thing to
  * check regardless of what else is in the shared database.
+ *
+ * Identity code/data split (A8): game rows live on `DB`, accounts on
+ * `IDENTITY_DB` — `mkAccount` seeds the latter (the leaderboard route
+ * batch-resolves names from there), `seedGame` the former.
  */
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 async function mkAccount(id: string, opts: { username?: string; displayName: string }): Promise<void> {
   const now = Date.now()
-  await DB()
+  await IDENTITY_DB()
     .prepare(
       `INSERT INTO accounts (id,credential_hash,username,display_name,created_at,status,token_epoch,origin_game,must_change_pw,login_fail_count,last_seen_at)
        VALUES (?,?,?,?,?,?,0,'iota',0,0,?)`,
@@ -50,6 +56,11 @@ async function seedGame(
     /** Trust tier. Defaults to a verified online game (the common case); pass
      *  'client_reported' to model a self-reported local game. */
     source?: 'online_authoritative' | 'client_reported'
+    /** The name recorded on `game_players.display_name` AT PLAY TIME — the A8
+     *  fallback used when the batched IDENTITY_DB name lookup has no
+     *  `accounts` row for this account_id. Defaults to null (the common case:
+     *  a real account whose name resolves fine). */
+    displayName?: string | null
   },
 ): Promise<void> {
   const gameUuid = `lb-${crypto.randomUUID()}`
@@ -69,10 +80,10 @@ async function seedGame(
   })
   await DB()
     .prepare(
-      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, opponent_kind, result, final_score, stats, total_moves, ai_move_count)
-       VALUES (?, 0, ?, 'human', ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO game_players (game_uuid, seat_index, account_id, owner_type, display_name, opponent_kind, result, final_score, stats, total_moves, ai_move_count)
+       VALUES (?, 0, ?, 'human', ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .bind(gameUuid, accountId, opts.opponentKind, opts.result, opts.finalScore, stats, opts.totalMoves ?? 0, opts.aiMoveCount ?? 0)
+    .bind(gameUuid, accountId, opts.displayName ?? null, opts.opponentKind, opts.result, opts.finalScore, stats, opts.totalMoves ?? 0, opts.aiMoveCount ?? 0)
     .run()
 }
 
@@ -277,5 +288,39 @@ describe('GET /leaderboard', () => {
 
     const anon = await fetchBoard('winrate-friends')
     expect(anon.body.me).toBeUndefined()
+  })
+
+  // A8: the two-step name lookup (game rows from DB, names batch-resolved
+  // from IDENTITY_DB, merged in JS — D1 can't JOIN across two databases).
+  describe('identity code/data split — two-step name lookup (A8)', () => {
+    it('falls back to game_players.display_name when the accounts row is missing (never drops the row)', async () => {
+      const orphanId = `lb-orphan-${crypto.randomUUID()}`
+      // Deliberately NO mkAccount() call — this account_id has no row at all
+      // in IDENTITY_DB (simulates a deleted account, or lookup drift).
+      await seedGame(orphanId, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: Date.now(), displayName: 'Orphan Fallback Name' })
+
+      const { body } = await fetchBoard('wins-friends')
+      const row = body.rows.find((r: any) => r.accountId === orphanId)
+      expect(row).toBeTruthy() // never dropped
+      expect(row.displayName).toBe('Orphan Fallback Name') // the game-time name, not blank
+      expect(row.username).toBeNull()
+    })
+
+    it('resolves names correctly across >90 distinct accounts (proves chunked IN(...) lookup, D1 caps bound params at 100)', async () => {
+      const N = 92
+      const ids = Array.from({ length: N }, () => `lb-chunk-${crypto.randomUUID()}`)
+      await Promise.all(ids.map((id, i) => mkAccount(id, { displayName: `Chunk Player ${i}` })))
+      const t0 = Date.now()
+      await Promise.all(ids.map((id, i) => seedGame(id, { opponentKind: 'human', result: 'win', finalScore: 5, endedAt: t0 + i })))
+
+      const { body } = await fetchBoard('wins-friends')
+      // Every one of the 92 accounts resolves its OWN correct name — including
+      // ones that only the second chunk (ids 90/91) would cover.
+      for (let i = 0; i < N; i++) {
+        const row = body.rows.find((r: any) => r.accountId === ids[i])
+        expect(row, `row for account ${i}`).toBeTruthy()
+        expect(row.displayName, `displayName for account ${i}`).toBe(`Chunk Player ${i}`)
+      }
+    })
   })
 })

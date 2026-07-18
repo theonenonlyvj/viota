@@ -1,6 +1,6 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyD1Schema, applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { backfillStats } from '../src/stats/backfill'
 import { SignJWT } from 'jose'
 import worker from '../src/index'
@@ -17,6 +17,7 @@ import worker from '../src/index'
 
 const ADMIN_SECRET = 'admin-secret-0123456789-abcdefghijklmnop'
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgames'): Promise<string> {
   return new SignJWT({})
@@ -29,9 +30,11 @@ async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgam
     .sign(new TextEncoder().encode(secret))
 }
 
+// account rows here are cosmetic (game_players.account_id is a free-form text
+// column, not a real FK D1 enforces) — they live in the identity store.
 async function mkAccount(id: string): Promise<void> {
   const now = Date.now()
-  await DB()
+  await IDENTITY_DB()
     .prepare(
       `INSERT INTO accounts (id,credential_hash,display_name,created_at,status,token_epoch,origin_game,must_change_pw,login_fail_count,last_seen_at) VALUES (?,?,?,?,'ghost',0,'iota',0,0,?)`,
     )
@@ -92,7 +95,8 @@ async function seatRow(gameUuid: string, seat: number) {
 
 describe('backfillStats', () => {
   beforeAll(async () => {
-    await applyD1Schema(DB())
+    await applyGameSchema(DB())
+    await applyIdentitySchema(IDENTITY_DB())
   })
 
   it('fills result/opponent_kind/stats/total_moves/ai_move_count for a completed game with NULL game_players, then is a no-op on re-run', async () => {

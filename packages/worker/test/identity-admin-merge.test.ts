@@ -1,11 +1,15 @@
 import { env, createExecutionContext, waitOnExecutionContext } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { SignJWT } from 'jose'
 import worker from '../src/index'
 
 const ADMIN_SECRET = 'admin-secret-0123456789-abcdefghijklmnop'
 const DB = () => (env as unknown as { DB: D1Database }).DB
+// /admin/merge is served through viota-worker's identity dispatch, which
+// aliases DB -> IDENTITY_DB for that path (src/index.ts) — the accounts rows
+// it reads/writes live on IDENTITY_DB.
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgames'): Promise<string> {
   return new SignJWT({})
@@ -20,7 +24,7 @@ async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgam
 
 async function mkGhost(id: string): Promise<void> {
   const now = Date.now()
-  await DB()
+  await IDENTITY_DB()
     .prepare(
       `INSERT INTO accounts (id,credential_hash,display_name,created_at,status,token_epoch,origin_game,must_change_pw,login_fail_count,last_seen_at) VALUES (?,?,?,?,'ghost',0,'iota',0,0,?)`,
     )
@@ -45,7 +49,8 @@ async function merge(tok: string | null, body: unknown, envOverrides: Record<str
 
 describe('/admin/merge', () => {
   beforeAll(async () => {
-    await applyD1Schema(DB())
+    await applyGameSchema(DB())
+    await applyIdentitySchema(IDENTITY_DB())
   })
 
   it('401s without an admin token', async () => {
@@ -81,7 +86,7 @@ describe('/admin/merge', () => {
     const body = (await r.json()) as { dryRun: boolean; ok: boolean }
     expect(body.dryRun).toBe(true)
     expect(body.ok).toBe(true)
-    const row = await DB().prepare(`SELECT status FROM accounts WHERE id='ma'`).first<{ status: string }>()
+    const row = await IDENTITY_DB().prepare(`SELECT status FROM accounts WHERE id='ma'`).first<{ status: string }>()
     expect(row!.status).toBe('ghost') // unchanged
   })
 
@@ -90,7 +95,7 @@ describe('/admin/merge', () => {
     await mkGhost('md')
     const r = await merge(await adminTok(), { fromAccountId: 'mc', intoAccountId: 'md', dryRun: false })
     expect(r.status).toBe(400)
-    const row = await DB().prepare(`SELECT status FROM accounts WHERE id='mc'`).first<{ status: string }>()
+    const row = await IDENTITY_DB().prepare(`SELECT status FROM accounts WHERE id='mc'`).first<{ status: string }>()
     expect(row!.status).toBe('ghost') // never merged
   })
 
@@ -101,9 +106,9 @@ describe('/admin/merge', () => {
     expect(r.status).toBe(200)
     const body = (await r.json()) as { dryRun: boolean; ok: boolean }
     expect(body).toMatchObject({ dryRun: false, ok: true })
-    const row = await DB().prepare(`SELECT status, merged_into FROM accounts WHERE id='me'`).first<{ status: string; merged_into: string }>()
+    const row = await IDENTITY_DB().prepare(`SELECT status, merged_into FROM accounts WHERE id='me'`).first<{ status: string; merged_into: string }>()
     expect(row).toMatchObject({ status: 'merged', merged_into: 'mf' })
-    const auditRow = await DB().prepare(`SELECT merged_by FROM account_merges WHERE from_account_id='me'`).first<{ merged_by: string }>()
+    const auditRow = await IDENTITY_DB().prepare(`SELECT merged_by FROM account_merges WHERE from_account_id='me'`).first<{ merged_by: string }>()
     expect(auditRow!.merged_by).toBe('admin:vijay')
   })
 })

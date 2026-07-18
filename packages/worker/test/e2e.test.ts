@@ -1,7 +1,7 @@
 import { SELF, env, runInDurableObject, runDurableObjectAlarm } from 'cloudflare:test'
 import { it, expect, beforeAll } from 'vitest'
 import { AIAgent } from '@viota/engine'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { GameRepository, type MoveRow, type SqlLike } from '../src/do/storage'
 import { serializeState, deserializeState } from '../src/do/state-codec'
 import { replay } from '../src/do/replay'
@@ -22,8 +22,12 @@ import type { MovePayload } from '../src/do/moves'
  */
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 const stubFor = (name: string) => env.GAME_DO.get(env.GAME_DO.idFromName(name))
-beforeAll(async () => { await applyD1Schema(DB()) })
+beforeAll(async () => {
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
+})
 
 const bearer = (token: string) => ({ Authorization: `Bearer ${token}` })
 const jsonHeaders = (token: string) => ({ 'content-type': 'application/json', ...bearer(token) })

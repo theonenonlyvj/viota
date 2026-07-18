@@ -1,8 +1,9 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 function q(path: string, body: unknown): Promise<Response> {
   return SELF.fetch('https://example.com' + path, {
@@ -14,7 +15,8 @@ function q(path: string, body: unknown): Promise<Response> {
 
 describe('/auth/login', () => {
   beforeAll(async () => {
-    await applyD1Schema(DB())
+    await applyGameSchema(DB())
+    await applyIdentitySchema(IDENTITY_DB())
     const tok = ((await (await q('/auth/quick', { deviceCredential: 'cred-login-000000000', displayName: 'Log' })).json()) as {
       token: string
     }).token
@@ -31,7 +33,7 @@ describe('/auth/login', () => {
     const body = (await r.json()) as { token: string; accountId: string; mustChangePassword: boolean }
     expect(body.token).toBeTruthy()
     expect(body.mustChangePassword).toBe(false)
-    const dev = await DB().prepare(`SELECT account_id FROM device_credentials WHERE account_id=?`).bind(body.accountId).all()
+    const dev = await IDENTITY_DB().prepare(`SELECT account_id FROM device_credentials WHERE account_id=?`).bind(body.accountId).all()
     expect(dev.results.length).toBeGreaterThanOrEqual(2) // original + newly bound
   })
 
@@ -76,7 +78,7 @@ describe('/auth/login', () => {
   it('mints a token that verifies via requireCanonicalAccount (vgames token, not legacy)', async () => {
     const r = await q('/auth/login', { username: 'logger', password: 'hunter2', deviceCredential: 'cred-verify-device-1' })
     const { token, accountId } = (await r.json()) as { token: string; accountId: string }
-    const acc = await DB().prepare(`SELECT status FROM accounts WHERE id=?`).bind(accountId).first<{ status: string }>()
+    const acc = await IDENTITY_DB().prepare(`SELECT status FROM accounts WHERE id=?`).bind(accountId).first<{ status: string }>()
     expect(acc!.status).toBe('claimed')
     // A vgames token carries claims a plain legacy `signToken` never would —
     // verified indirectly via a successful /auth/set-credentials-style authed call.
@@ -122,17 +124,22 @@ describe('/auth/login session-bound ghost-fold', () => {
     const { accountId: targetId } = (await r.json()) as { accountId: string }
 
     // The ghost is now merged into the just-logged-in account...
-    const ghostRow = await DB().prepare(`SELECT status, merged_into FROM accounts WHERE id=?`).bind(ghostId).first<{
+    const ghostRow = await IDENTITY_DB().prepare(`SELECT status, merged_into FROM accounts WHERE id=?`).bind(ghostId).first<{
       status: string
       merged_into: string
     }>()
     expect(ghostRow).toMatchObject({ status: 'merged', merged_into: targetId })
 
-    // ...and its game folds along with it.
-    const gp = await DB().prepare(`SELECT account_id FROM game_players WHERE game_uuid='fold-g1' AND seat_index=0`).first<{
-      account_id: string
-    }>()
-    expect(gp!.account_id).toBe(targetId)
+    // ...and the merge is recorded in account_merges (identity code/data
+    // split, A9: identity contains NO game-table SQL, so THIS module never
+    // retags fold-g1's game_players itself — that's viota's own merge
+    // reconciler's job, pulling this exact row on its next cron sweep; see
+    // test/reconciler.test.ts for the game_players-side proof).
+    const mergeRow = await IDENTITY_DB()
+      .prepare(`SELECT into_account_id FROM account_merges WHERE from_account_id=? AND superseded_by IS NULL`)
+      .bind(ghostId)
+      .first<{ into_account_id: string }>()
+    expect(mergeRow?.into_account_id).toBe(targetId)
   })
 
   it('does NOT fold when the presented device maps to an already-CLAIMED account', async () => {
@@ -160,7 +167,7 @@ describe('/auth/login session-bound ghost-fold', () => {
     const r = await q('/auth/login', { username: 'foldclaimedb', password: 'hunter2', deviceCredential: 'cred-fold-claimedA-1' })
     expect(r.status).toBe(200)
 
-    const aRow = await DB().prepare(`SELECT status FROM accounts WHERE id=?`).bind(aTok.accountId).first<{ status: string }>()
+    const aRow = await IDENTITY_DB().prepare(`SELECT status FROM accounts WHERE id=?`).bind(aTok.accountId).first<{ status: string }>()
     expect(aRow!.status).toBe('claimed') // untouched — NOT folded/merged
   })
 
@@ -174,7 +181,7 @@ describe('/auth/login session-bound ghost-fold', () => {
       headers: { 'content-type': 'application/json', authorization: 'Bearer ' + aTok.token },
       body: JSON.stringify({ username: 'rebinda', password: 'hunter2' }),
     })
-    const credRow = await DB()
+    const credRow = await IDENTITY_DB()
       .prepare(`SELECT credential_hash FROM device_credentials WHERE account_id=?`)
       .bind(aTok.accountId)
       .first<{ credential_hash: string }>()
@@ -196,7 +203,7 @@ describe('/auth/login session-bound ghost-fold', () => {
     expect(r.status).toBe(200)
 
     // The device row must now be REBOUND to B, not left pointing at A.
-    const devRow = await DB()
+    const devRow = await IDENTITY_DB()
       .prepare(`SELECT account_id FROM device_credentials WHERE credential_hash=?`)
       .bind(credHash)
       .first<{ account_id: string }>()

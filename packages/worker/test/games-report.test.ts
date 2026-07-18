@@ -1,6 +1,6 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 
 /**
  * Task 7 — POST /games/report (Phase 4). Uploads a FINISHED local (client-only
@@ -12,9 +12,11 @@ import { applyD1Schema } from '../src/d1/schema'
  */
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 async function quickAccount(displayName: string): Promise<{ token: string; accountId: string }> {

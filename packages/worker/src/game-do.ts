@@ -22,6 +22,14 @@ export interface Env {
   /** D1 analytics archive (Phase 5). Written through via ctx.waitUntil; a D1
    *  hiccup can never stall the live game (the DO SQLite copy is authoritative). */
   DB: D1Database
+  /** VGames identity data (code/data split, Step 1 — A11): a SECOND binding,
+   *  pointed at the SAME database as DB initially (two bindings, one DB;
+   *  Step 4 flips only the target). Game code reads identity through this
+   *  binding (canonicalization, name lookups, merge reconciliation) and NEVER
+   *  writes it (see identity/authctx.ts, stats/*, do/reconcile.ts) — the
+   *  identity SERVICE (src/identity-entry.ts, wrangler.identity.toml) owns
+   *  writes to its own `DB` binding. */
+  IDENTITY_DB: D1Database
   /** The exact browser origin allowed by CORS (the Cloudflare Pages URL). Set in
    *  prod via `[vars]` or `wrangler secret put CLIENT_ORIGIN`. Unset only in
    *  local dev, where CORS falls back to a permissive `*`. See `src/cors.ts`. */

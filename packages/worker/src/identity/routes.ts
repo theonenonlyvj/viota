@@ -217,12 +217,21 @@ export async function handleIntrospect(request: Request, env: IdentityEnv): Prom
  * admin step-up token (`verifyAdminToken` — `aud='vgames-admin'`, signed by
  * `ADMIN_JWT_SECRET`, never the player-facing `JWT_SECRET`).
  *
- * A real merge (`dryRun:false`) additionally requires a non-empty
- * `confirmNonce`: the intended flow is dry-run first (review `retagCounts` /
- * `selfPlayFlags` with a human), THEN resubmit with `dryRun:false` +
- * `confirmNonce` as the explicit "I looked at the dry-run and this is
- * correct" acknowledgment. Missing it on a real merge is a 400, not a 401 —
- * the caller is authenticated, just missing the confirmation step.
+ * Identity code/data split (A6): this endpoint only ever touches IDENTITY
+ * tables — `retagCounts` covers device_credentials/external_identities, and
+ * `gameData` is a pointer, not a number (identity contains no game-table SQL
+ * — A9). The full documented flow is now TWO calls across TWO services:
+ *   1. game audit — `GET <game-worker>/admin/merge-audit?from=&into=` (e.g.
+ *      viota-worker's, which returns `selfPlayFlags` + `game_players` counts
+ *      from ITS OWN D1 — see `stats/adminMergeAudit.ts` there);
+ *   2. THIS endpoint, dry-run first (review `retagCounts` alongside step 1's
+ *      output with a human), THEN resubmit with `dryRun:false` +
+ *      `confirmNonce` as the explicit "I looked at both and this is
+ *      correct" acknowledgment. Missing `confirmNonce` on a real merge is a
+ *      400, not a 401 — the caller is authenticated, just missing the
+ *      confirmation step. Each game's OWN `game_players` retag then happens
+ *      asynchronously via that game's merge reconciler (pull-based, not
+ *      triggered by this call).
  */
 export async function handleAdminMerge(request: Request, env: IdentityEnv & AdminEnv): Promise<Response> {
   const admin = await verifyAdminToken(request, env)

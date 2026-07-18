@@ -1,11 +1,15 @@
 import { SELF, env } from 'cloudflare:test'
 import { it, expect, describe, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { hashCredential, sanitizeDisplayName } from '../src/d1/accounts'
 import { verifyToken } from '../src/jwt'
 import { TEST_JWT_SECRET } from './helpers'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+// accounts live behind IDENTITY_DB post-split (viota-worker aliases DB->
+// IDENTITY_DB when routing identity paths — see src/index.ts) — reads here
+// go straight to the binding rather than through that alias.
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 // A fresh, high-entropy 256-bit-style credential per call (hex of 32 bytes) so
 // shared-storage tests never collide on credential_hash.
@@ -31,7 +35,8 @@ async function claimAccount(token: string, username: string): Promise<Response> 
 }
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 describe('POST /auth/quick', () => {
@@ -87,7 +92,7 @@ describe('POST /auth/quick', () => {
     const cred = mintCredential()
     const dirty = '  <b>Ev​il</b>  ' // HTML tags, zero-width, a control char
     const { accountId } = (await (await authQuick(cred, dirty)).json()) as { accountId: string }
-    const row = await DB()
+    const row = await IDENTITY_DB()
       .prepare('SELECT display_name FROM accounts WHERE id = ?')
       .bind(accountId)
       .first<{ display_name: string }>()
@@ -108,7 +113,7 @@ describe('POST /auth/quick', () => {
     const { accountId } = (await (await authQuick(mintCredential(), 'JaipurGhost', 'jaipur')).json()) as {
       accountId: string
     }
-    const row = await DB()
+    const row = await IDENTITY_DB()
       .prepare('SELECT origin_game FROM accounts WHERE id = ?')
       .bind(accountId)
       .first<{ origin_game: string }>()
@@ -119,7 +124,7 @@ describe('POST /auth/quick', () => {
     const { accountId } = (await (await authQuick(mintCredential(), 'WikiGhost', 'vwiki-race')).json()) as {
       accountId: string
     }
-    const row = await DB()
+    const row = await IDENTITY_DB()
       .prepare('SELECT origin_game FROM accounts WHERE id = ?')
       .bind(accountId)
       .first<{ origin_game: string }>()
@@ -130,7 +135,7 @@ describe('POST /auth/quick', () => {
     const { accountId: noneId } = (await (await authQuick(mintCredential(), 'NoGame')).json()) as {
       accountId: string
     }
-    const noneRow = await DB()
+    const noneRow = await IDENTITY_DB()
       .prepare('SELECT origin_game FROM accounts WHERE id = ?')
       .bind(noneId)
       .first<{ origin_game: string }>()
@@ -139,7 +144,7 @@ describe('POST /auth/quick', () => {
     const { accountId: bogusId } = (await (await authQuick(mintCredential(), 'BogusGame', 'not-a-real-game')).json()) as {
       accountId: string
     }
-    const bogusRow = await DB()
+    const bogusRow = await IDENTITY_DB()
       .prepare('SELECT origin_game FROM accounts WHERE id = ?')
       .bind(bogusId)
       .first<{ origin_game: string }>()
@@ -153,7 +158,7 @@ describe('POST /auth/quick', () => {
     // `game` on re-auth must NOT relabel it.
     const { accountId: b } = (await (await authQuick(cred, 'First', 'iota')).json()) as { accountId: string }
     expect(b).toBe(a)
-    const row = await DB()
+    const row = await IDENTITY_DB()
       .prepare('SELECT origin_game FROM accounts WHERE id = ?')
       .bind(a)
       .first<{ origin_game: string }>()
@@ -163,7 +168,7 @@ describe('POST /auth/quick', () => {
   it('NEVER stores the raw credential — only its SHA-256 hash', async () => {
     const cred = mintCredential()
     const { accountId } = (await (await authQuick(cred, 'Secret')).json()) as { accountId: string }
-    const row = await DB()
+    const row = await IDENTITY_DB()
       .prepare('SELECT * FROM accounts WHERE id = ?')
       .bind(accountId)
       .first<Record<string, unknown>>()

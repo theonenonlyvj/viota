@@ -2,7 +2,7 @@ import { env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
 import identityWorker, { type IdentityServiceEnv } from '../src/identity-entry'
 import { routeIdentity } from '../src/identity/router'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyIdentitySchema } from '../src/d1/schema'
 import { TEST_JWT_SECRET } from './helpers'
 
 /**
@@ -12,13 +12,27 @@ import { TEST_JWT_SECRET } from './helpers'
  * (the pool-workers `SELF` is bound to wrangler.toml = the main worker, so the
  * identity-only entrypoint is exercised via a direct `.fetch(req, env)` call —
  * the same pattern as worker-guard.test.ts).
+ *
+ * Identity code/data split (Step 1): give `identEnv()`'s `DB` field the
+ * `IDENTITY_DB` binding's value, not `DB`'s — that's the store the identity
+ * schema is applied to below, and it's what `identityWorker.fetch`'s real env
+ * would resolve to in production (its own `DB` binding IS identity data; see
+ * `identity-entry.ts`). A direct `routeIdentity(request, identEnv())` call
+ * (bypassing `identityWorker.fetch`'s internal DB->IDENTITY_DB aliasing)
+ * additionally needs an explicit `IDENTITY_DB` field, since
+ * `requireCanonicalAccount` reads that specifically — `identEnv()` sets both
+ * to the SAME store so it satisfies either call shape.
  */
 
-const DB = () => (env as unknown as { DB: D1Database }).DB
-const identEnv = (): IdentityServiceEnv => ({ DB: DB(), JWT_SECRET: TEST_JWT_SECRET })
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
+const identEnv = (): IdentityServiceEnv & { IDENTITY_DB: D1Database } => ({
+  DB: IDENTITY_DB(),
+  IDENTITY_DB: IDENTITY_DB(),
+  JWT_SECRET: TEST_JWT_SECRET,
+})
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 describe('routeIdentity (shared identity router)', () => {
@@ -106,7 +120,7 @@ describe('identity-entry (vgames-identity service fetch)', () => {
   })
 
   it('fail-closes 503 without JWT_SECRET, but /health stays 200', async () => {
-    const badEnv = { DB: DB() } as IdentityServiceEnv
+    const badEnv = { DB: IDENTITY_DB() } as IdentityServiceEnv
     const guarded = await identityWorker.fetch(
       new Request('https://id.example.com/auth/introspect', {
         method: 'POST',
