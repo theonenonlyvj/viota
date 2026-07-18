@@ -99,6 +99,15 @@ export const GAME_SCHEMA_STATEMENTS: readonly string[] = [
    WHERE gp.owner_type='human' AND g.status='completed'
      AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
    GROUP BY a.id`,
+  // Merge reconciler self-play flags (migration 0005) — game-domain data; see
+  // do/reconcile.ts + identity/merge.ts.
+  `CREATE TABLE IF NOT EXISTS merge_selfplay_flags (
+     game_uuid   TEXT NOT NULL,
+     from_id     TEXT NOT NULL,
+     into_id     TEXT NOT NULL,
+     detected_at INTEGER NOT NULL,
+     PRIMARY KEY (game_uuid, from_id, into_id)
+   )`,
 ]
 
 /** accounts/device_credentials/account_merges/external_identities — the

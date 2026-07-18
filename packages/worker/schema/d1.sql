@@ -178,3 +178,16 @@ JOIN accounts a ON a.id        = gp.account_id
 WHERE gp.owner_type='human' AND g.status='completed'
   AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
 GROUP BY a.id;
+
+-- Merge reconciler self-play flags (migration 0005). Game-domain data (lives
+-- in viota's own D1, never identity's — see identity/merge.ts and
+-- do/reconcile.ts). The reconciler (viota's 1-minute cron) flags a game where
+-- a merge's from/into accounts occupied DIFFERENT seats — evidence of two
+-- distinct humans, surfaced via GET /admin/merge-audit (A6).
+CREATE TABLE IF NOT EXISTS merge_selfplay_flags (
+  game_uuid   TEXT NOT NULL,
+  from_id     TEXT NOT NULL,
+  into_id     TEXT NOT NULL,
+  detected_at INTEGER NOT NULL,
+  PRIMARY KEY (game_uuid, from_id, into_id)
+);
