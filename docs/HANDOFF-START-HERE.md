@@ -10,7 +10,9 @@
 >    `../vgames-platform/docs/council/2026-07-15-account-stats-critique.md`. Headline: auth is
 >    (over-)done; the competitive/product layer is the gap; council recommends federated stats
 >    (kill P4 shared-D1 migration) — pending Vijay.
-> 3. **New on viota main (LOCAL commits, NOT pushed — pushing deploys):**
+> 3. **New on viota main (LOCAL commits, NOT pushed).** (Correction 2026-07-17: pushing viota
+>    does NOT deploy anything — the Pages project is direct-upload, not git-connected, and the
+>    workers deploy only via `wrangler deploy`. See `../../vgames-platform/docs/OPS-RUNBOOK.md`.)
 >    - `d1ead5a` introspect returns displayName + bounded alias set (was found uncommitted from a
 >      prior session; tests verified green, then committed). **vwiki-race's hardening branch
 >      consumes these fields — deploy the viota worker BEFORE vwiki-race, always.**
@@ -19,9 +21,9 @@
 >      "Save this win — claim your name"), gated on `!getUsername()`, reusing AccountModal.
 >    - `4531a09` SQL leaderboard views annotated UNUSED at runtime (live boards = TS handlers in
 >      `packages/worker/src/stats/leaderboard.ts`).
-> 4. **Test state:** worker 393/393 (one KNOWN ~1-in-3 flake: `test/e2e.test.ts` ~line 85, the
->    `quickAuth('Host')` two-accounts e2e — pre-existing, documented, not load-bearing);
->    client 372/372; `tsc --noEmit` clean.
+> 4. **Test state:** worker 405/405 (the long-documented ~1-in-3 e2e "flake" was DIAGNOSED +
+>    FIXED 2026-07-17: it was vitest's default 5000ms testTimeout on the full-lifecycle e2e —
+>    explicit 60s timeout now, 3/3 full-suite runs green); client 372/372; `tsc --noEmit` clean.
 > 5. **Known product findings for viota specifically** (see critique appendix): ghost display
 >    names default to bare "Player" (indistinguishable rows on boards); "Best play/Best game"
 >    boards include self-reported local scores (filter/badge/split = Vijay's call); no
