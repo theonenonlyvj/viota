@@ -49,6 +49,15 @@ binding = "IDENTITY_DB"
 database_name = "viota"
 database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 
+
+# Service binding to the identity worker (grace-window proxy transport).
+# Worker->worker HTTP fetches to *.workers.dev are RESTRICTED by Cloudflare
+# (the 2026-07-18 proxy outage) — a service binding is the sanctioned path
+# (same pattern vwiki-race uses). Dies with the grace proxy (~2026-07-20).
+[[services]]
+binding = "IDENTITY_SVC"
+service = "vgames-identity"
+
 # Cron sweep (1-min is the Cloudflare floor): pokes stale active games so their
 # DO alarm/heal path re-drives/abandons them and drains any unflushed archive.
 [triggers]
