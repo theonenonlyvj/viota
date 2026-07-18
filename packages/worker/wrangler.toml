@@ -32,6 +32,14 @@ database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 [triggers]
 crons = ["* * * * *"]
 
+# Persisted Workers Logs (Cloudflare dashboard → Workers → viota-worker → Logs),
+# matching wrangler.identity.toml. Without this, console output is visible only
+# via a live `wrangler tail`; with it, auth/gameplay failures are diagnosable
+# after the fact. Takes effect on the next `wrangler deploy`.
+[observability]
+enabled = true
+head_sampling_rate = 1
+
 # JWT_SECRET is DELIBERATELY NOT set here. In PRODUCTION it MUST be set via
 # `wrangler secret put JWT_SECRET` (32+ byte random) — a [vars] entry with the
 # same name would OVERWRITE that remote secret on every `wrangler deploy`
