@@ -81,7 +81,11 @@ function d1MovesToRows(rows: Record<string, unknown>[]): MoveRow[] {
   }))
 }
 
-it('drives the full online lifecycle: create -> join -> start -> play -> drop/cover -> reclaim/veto -> end, and the D1 archive replays to the final board', async () => {
+// timeout: this single test drives a WHOLE game (2 real accounts + up to 600
+// HTTP moves + archive replay) and normally takes ~4-5s — right at vitest's
+// 5000ms default. Under full-suite CPU contention it tipped over ~1-in-3 (the
+// long-documented "e2e flake"). 60s is headroom, not an expectation.
+it('drives the full online lifecycle: create -> join -> start -> play -> drop/cover -> reclaim/veto -> end, and the D1 archive replays to the final board', { timeout: 60_000 }, async () => {
   // Two distinct authed accounts (real D1 accounts rows).
   const host = await quickAuth('Host')
   const friend = await quickAuth('Friend')
