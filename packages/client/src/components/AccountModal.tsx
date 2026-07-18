@@ -1,12 +1,9 @@
 import { useRef, useState } from 'react'
 import { useModalDismiss } from '../hooks/useModalDismiss'
 import { claimAccount, loginAccount } from '../net/account'
-import { serverUrl } from '../net/config'
 import { getDisplayName, getToken, quickAuth, setUsername } from '../net/identity'
 import Button from './Button'
 import PillButton from './PillButton'
-
-const SERVER_URL = serverUrl()
 
 /** Mirrors the server's shape gate exactly (packages/worker/src/identity/username.ts). */
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/
@@ -83,8 +80,8 @@ export default function AccountModal({
       if (mode === 'claim') {
         // A fresh device has no token yet — mint one (the same silent
         // quickAuth every other flow uses) before claiming onto it.
-        if (!getToken()) await quickAuth(SERVER_URL, getDisplayName())
-        const result = await claimAccount(SERVER_URL, usernameInput, passwordInput)
+        if (!getToken()) await quickAuth(getDisplayName())
+        const result = await claimAccount(usernameInput, passwordInput)
         if (result.ok) {
           setUsername(usernameInput)
           setSuccess(`Account created — log in as "${usernameInput}" on any device.`)
@@ -94,7 +91,7 @@ export default function AccountModal({
           setError(claimErrorText(result.error))
         }
       } else {
-        const result = await loginAccount(SERVER_URL, usernameInput, passwordInput)
+        const result = await loginAccount(usernameInput, passwordInput)
         if (result.ok) {
           setUsername(usernameInput)
           setSuccess(`Logged in as ${usernameInput}.`)

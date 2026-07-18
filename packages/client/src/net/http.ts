@@ -6,6 +6,13 @@ import { getToken, reAuth } from './identity'
  * The token rides the `Authorization` header (never the URL). On a 401 — an
  * expired/rotated token — we silently re-mint from the device credential and
  * retry once. A second 401 is surfaced. Never prompts the user mid-game.
+ *
+ * `serverUrl` here is the ORIGINAL request's origin (a game call passes
+ * `serverUrl()`, unaffected by the identity split). The re-auth itself
+ * (`reAuth()`) does NOT reuse it — it resolves `authUrl()` internally (A2/2a)
+ * — so a 401 on, say, `/games/:id/move` still re-authenticates against the
+ * identity service, not viota-worker, then retries the ORIGINAL request
+ * against its own original origin with the fresh token.
  */
 export async function authedFetch(
   serverUrl: string,
@@ -24,7 +31,7 @@ export async function authedFetch(
   // Silent re-auth, then retry once with the fresh token.
   let fresh: string
   try {
-    fresh = await reAuth(serverUrl)
+    fresh = await reAuth()
   } catch {
     return res // re-auth itself failed — surface the original 401
   }

@@ -1,4 +1,5 @@
 import { getDeviceCredential, setSession } from './identity'
+import { authUrl } from './config'
 import { authedFetch } from './http'
 
 /**
@@ -7,6 +8,11 @@ import { authedFetch } from './http'
  * the EXACT worker contract — see `packages/worker/src/identity/routes.ts`
  * (`handleSetCredentials` / `handleLogin`). No new worker code; both
  * endpoints are already live.
+ *
+ * Identity code/data split (A2/2a): both resolve `authUrl()` internally
+ * (never a caller-supplied origin) — same reasoning as `net/identity.ts`'s
+ * `quickAuth`/`reAuth`. `net/ghost.ts`'s `claimGhostGames` (`POST /claim`) is
+ * UNRELATED — that's a game-domain call and stays on `serverUrl()`.
  */
 
 export type ClaimResult = { ok: true } | { ok: false; error: string }
@@ -20,8 +26,8 @@ export type LoginResult = { ok: true; mustChangePassword: boolean } | { ok: fals
  * `'not_ghost'`), 400 (bad username/password shape) to `'invalid'`, and any
  * other non-ok status to a generic `'failed'`.
  */
-export async function claimAccount(serverUrl: string, username: string, password: string): Promise<ClaimResult> {
-  const res = await authedFetch(serverUrl, '/auth/set-credentials', {
+export async function claimAccount(username: string, password: string): Promise<ClaimResult> {
+  const res = await authedFetch(authUrl(), '/auth/set-credentials', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password }),
@@ -46,8 +52,8 @@ export async function claimAccount(serverUrl: string, username: string, password
  * for an unknown username or a wrong password) and any other non-ok status to
  * a generic `'failed'`.
  */
-export async function loginAccount(serverUrl: string, username: string, password: string): Promise<LoginResult> {
-  const res = await fetch(`${serverUrl}/auth/login`, {
+export async function loginAccount(username: string, password: string): Promise<LoginResult> {
+  const res = await fetch(`${authUrl()}/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ username, password, deviceCredential: getDeviceCredential() }),

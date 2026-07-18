@@ -64,7 +64,7 @@ function aiDisplayName(seat: number): string {
 export async function reportLocalGame(serverUrl: string, game: FinishedLocalGame): Promise<void> {
   try {
     if (!getToken()) {
-      await quickAuth(serverUrl, getDisplayName())
+      await quickAuth(getDisplayName())
     }
     const accountId = getAccountId()
     if (!accountId) return // no resolvable identity (quickAuth failed/offline) -> nothing to attribute this to

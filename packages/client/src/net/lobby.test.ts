@@ -24,7 +24,7 @@ test('createOnlineGame quick-auths then POSTs authed /games mode=solo', async ()
   const created = await createOnlineGame('http://sv', { displayName: 'Alice', opponents: 2 })
 
   expect(created).toEqual({ gameId: 'game-9', code: 'ABCDEF', mySeat: 0, players: ['Alice', 'AI 2', 'AI 3'] })
-  expect(fetchMock.mock.calls[0]![0]).toBe('http://sv/auth/quick')
+  expect(fetchMock.mock.calls[0]![0]).toBe('http://localhost:8787/auth/quick') // quickAuth resolves authUrl() internally (dev fallback = serverUrl()'s default), not the 'http://sv' passed to createOnlineGame for the game call
   const [gamesUrl, gamesInit] = fetchMock.mock.calls[1]!
   expect(gamesUrl).toBe('http://sv/games')
   const body = JSON.parse((gamesInit as RequestInit).body as string)

@@ -45,7 +45,7 @@ test('quickAuth POSTs credential+name and stores the token + accountId', async (
   })
   vi.stubGlobal('fetch', fetchMock)
 
-  const res = await quickAuth('http://localhost:8787', 'Alice')
+  const res = await quickAuth('Alice')
 
   expect(res).toEqual({ token: 'jwt-abc', accountId: 'acc-1' })
   expect(getToken()).toBe('jwt-abc')
@@ -60,7 +60,7 @@ test('quickAuth POSTs credential+name and stores the token + accountId', async (
 
 test('quickAuth throws on a non-ok response', async () => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({}) }))
-  await expect(quickAuth('http://localhost:8787', 'Bad')).rejects.toThrow()
+  await expect(quickAuth('Bad')).rejects.toThrow()
 })
 
 test('getUsername is null until a claimed username is stored', () => {

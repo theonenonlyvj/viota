@@ -10,7 +10,16 @@
  * - `quickAuth` mints/authenticates a real account and stores the 24h JWT. A 401
  *   anywhere triggers a SILENT re-auth from the stored credential — never a
  *   mid-game login prompt.
+ *
+ * Identity code/data split (A2/2a): `quickAuth`/`reAuth` resolve their OWN
+ * origin via `authUrl()` (`net/config.ts`) rather than accepting one from the
+ * caller — this is what makes `http.ts`'s silent 401-reAuth path repoint to
+ * the identity service atomically for every caller (lobby.ts, reportGame.ts,
+ * AccountModal) the moment `authUrl()`'s default changes, with no per-call-site
+ * plumbing. Every OTHER net/ call (game routes, `/claim`) is unaffected —
+ * they keep passing `serverUrl()` explicitly, as before.
  */
+import { authUrl } from './config'
 
 const CRED_KEY = 'viota_device_credential'
 const TOKEN_KEY = 'viota_token'
@@ -83,14 +92,14 @@ export function setSession(token: string, accountId: string): void {
 /**
  * POST /auth/quick { deviceCredential, displayName } → { token, accountId }.
  * Stores the token + accountId (+ displayName for silent re-auth). Presenting
- * the same credential always re-authenticates the SAME account.
+ * the same credential always re-authenticates the SAME account. Always talks
+ * to `authUrl()` — never a caller-supplied origin (see module docstring).
  */
 export async function quickAuth(
-  serverUrl: string,
   displayName: string,
 ): Promise<{ token: string; accountId: string }> {
   const deviceCredential = getDeviceCredential()
-  const res = await fetch(`${serverUrl}/auth/quick`, {
+  const res = await fetch(`${authUrl()}/auth/quick`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ deviceCredential, displayName }),
@@ -108,7 +117,7 @@ export async function quickAuth(
  * Silent re-auth on a 401: re-mint a token from the stored credential + last
  * display name. Returns the fresh token. Never prompts the user.
  */
-export async function reAuth(serverUrl: string): Promise<string> {
-  const { token } = await quickAuth(serverUrl, getDisplayName())
+export async function reAuth(): Promise<string> {
+  const { token } = await quickAuth(getDisplayName())
   return token
 }

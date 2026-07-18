@@ -143,7 +143,7 @@ test('a 401 triggers a silent re-auth then retries the request', async () => {
 
   expect(res.moveIndex).toBe(5)
   expect(fetchMock).toHaveBeenCalledTimes(3)
-  expect(fetchMock.mock.calls[1]![0]).toBe('http://sv/auth/quick')
+  expect(fetchMock.mock.calls[1]![0]).toBe('http://localhost:8787/auth/quick') // reAuth() resolves authUrl() internally (dev fallback = serverUrl()'s default), not the original request's 'http://sv' origin
   // the retry carried the refreshed token
   const retryHeaders = new Headers((fetchMock.mock.calls[2]![1] as RequestInit).headers)
   expect(retryHeaders.get('Authorization')).toBe('Bearer jwt-2')
