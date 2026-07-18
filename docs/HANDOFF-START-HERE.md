@@ -22,9 +22,14 @@
 >    - `4531a09` SQL leaderboard views annotated UNUSED at runtime (live boards = TS handlers in
 >      `packages/worker/src/stats/leaderboard.ts`).
 > 4. **Test state:** worker 405/405 (the long-documented ~1-in-3 e2e "flake" was DIAGNOSED +
->    FIXED 2026-07-17: it was vitest's default 5000ms testTimeout on the full-lifecycle e2e —
->    explicit 60s timeout now, 3/3 full-suite runs green); client 372/372; `tsc --noEmit` clean.
-> 5. **Known product findings for viota specifically** (see critique appendix): ghost display
+>    FIXED 2026-07-17, commit `3b66a27`: it was vitest's default 5000ms testTimeout on the
+>    full-lifecycle e2e — explicit 60s timeout now, 3/3 full-suite runs green); client 372/372;
+>    `tsc --noEmit` clean.
+> 5. **THREAD 1 (stats + leaderboards) SHIPPED + DEPLOYED (2026-07-14).** The THREAD 1 section
+>    below ("ACTIVE BUILD, ~90%, NOT deployed") is now historical — leaderboards are live (7
+>    boards via `GET /leaderboard` + `GET /me/stats`, TS handlers in
+>    `packages/worker/src/stats/leaderboard.ts`).
+> 6. **Known product findings for viota specifically** (see critique appendix): ghost display
 >    names default to bare "Player" (indistinguishable rows on boards); "Best play/Best game"
 >    boards include self-reported local scores (filter/badge/split = Vijay's call); no
 >    head-to-head surface yet (game_players has the data).

@@ -170,7 +170,19 @@ package, that serves **only** the VGames Identity surface — `/auth/quick`,
 Durable Object, no gameplay, no cron**; it reads/writes the accounts/devices
 tables in the **same D1** as viota-worker. viota-worker keeps serving identity
 too during the transition — both route through the one shared `routeIdentity`
-(`src/identity/router.ts`), so the two deployments can't drift.
+(`src/identity/router.ts`), so they share **source**, not runtime. They are
+two **separately deployed** services, so they drift by **deploy time**:
+whichever was deployed most recently reflects the current code; the other
+runs whatever was live at its last `wrangler deploy` until it gets one too.
+(This actually happened 2026-07-16: `vgames-identity` picked up a
+guest-name-reservation change that `viota-worker` didn't get until later.)
+
+**Deploy-both rule:** any change touching `packages/worker/src/identity/`,
+`src/d1/accounts.ts`, `src/d1/claim.ts`, `src/d1/devices.ts`, `src/jwt.ts`,
+`src/cors.ts`, or `src/auth.ts` must be deployed to **both** `viota-worker`
+and `vgames-identity` in the same session — leaving one behind means they
+share a JWT secret/audience (tokens still interchange) but diverge in
+behavior until the laggard catches up.
 
 Config: `packages/worker/wrangler.identity.toml` (entry `src/identity-entry.ts`,
 same `[[d1_databases]]` block as `wrangler.toml`).

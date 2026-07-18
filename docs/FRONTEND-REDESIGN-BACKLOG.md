@@ -55,12 +55,12 @@ should run the AI (like local mode) and the server just **log** the moves (histo
 
 ## 🔸 REMAINING — polish / accumulated Minor findings (from the slice final-reviews; non-blocking)
 
-- **Shared `PillButton`** — the `pill()` active/inactive styling is duplicated across `Lobby.tsx` and
+- ✅ **DONE (2026-07-18, commit `80f4758`) — Shared `PillButton`** — the `pill()` active/inactive styling is duplicated across `Lobby.tsx` and
   `PlayVsAiModal.tsx` (and the lobby's own pill groups). Extract one component; drive active state via a
   CSS `[aria-pressed="true"]` selector instead of inline style.
-- **`useModalDismiss`** — use `useLayoutEffect` (not `useEffect`) for initial focus (one paint frame);
+- ✅ **DONE (2026-07-18, commit `80f4758`) — `useModalDismiss`** — use `useLayoutEffect` (not `useEffect`) for initial focus (one paint frame);
   add **focus-restoration** to the triggering element on close (a11y completeness for the shared hook).
-- **Input labels / a11y** — `Lobby` name + room-code `<input>`s are placeholder-only (no `<label>` /
+- ✅ **DONE (2026-07-18, commit `80f4758`) — Input labels / a11y** — `Lobby` name + room-code `<input>`s are placeholder-only (no `<label>` /
   `aria-label`). `JoinRoom` got an `aria-label`; apply the same to `Lobby` (and any other bare inputs).
 - **Test gaps** (impl is correct, just not directly covered): `ResumeStrip` online `waiting → /lobby/:code`
   branch untested; `Room` gate never drives a real case mismatch (lowercase `session.code` vs uppercase
@@ -84,11 +84,12 @@ should run the AI (like local mode) and the server just **log** the moves (histo
 
 ## 🎨 REMAINING — branding / assets
 
-- **`og-image.png` refresh** — the social-preview image in `public/` predates the Neon-Night look; it no
+- ✅ **DONE (commit `c81fac6`) — `og-image.png` refresh** — the social-preview image in `public/` predates the Neon-Night look; it no
   longer matches the live hero. Regenerate a 1200×630 og-image from the new landing.
-- **Public name / "Iota" trademark** — `index.html` `<title>` and OG tags still say **"Iota"** (the
+- ✅ **DONE (commit `afa64a1`) — Public name / "Iota" trademark** — `index.html` `<title>` and OG tags still say **"Iota"** (the
   trademarked name); the UI wordmark says **viota**. Decide the public name before splashing it large,
-  then reconcile `<title>` / OG / any "Iota" copy. (Vijay has a `renamePending` flag on his bio.)
+  then reconcile `<title>` / OG / any "Iota" copy. (Vijay has a `renamePending` flag on his bio.) —
+  reconciled: `<title>`/OG/Twitter tags all say "viota" now.
 - **Screenshots** — the personal-site bio references placeholder `/screenshots/iota.png`; real
   screenshots of the redesigned UI would be nice (that's the `personal-site` repo, not viota, but part
   of "the UI push" story).
@@ -97,7 +98,11 @@ should run the AI (like local mode) and the server just **log** the moves (histo
 
 ## ⏸ DEFERRED — separate scope (not strictly UI)
 
-- **VGames account** — a unified cross-game login (viota + vjaipur), built ONCE, email/reset included.
+- ✅ **DONE (2026-07-18) — VGames account — this entry is STALE.** Shipped as VGames Identity
+  P1 (shared accounts across viota + vjaipur, live since 2026-07-15; ghost mint, claim
+  username+password, cross-device login, `device_credentials` 1:many, PBKDF2). See
+  `vgames-platform/docs/CURRENT-STATE.md`. Original stale text below, kept for history:
+  a unified cross-game login (viota + vjaipur), built ONCE, email/reset included.
   Vijay's 2026-07-09 call: don't build viota-only accounts. Today = ghost/quick-account only (device
   credential in localStorage; lost on clear-data / new browser / new device). Full design (ghost →
   create = attach username+password to current ghost → login elsewhere = bind browser + merge ghost
