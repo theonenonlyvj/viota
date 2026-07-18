@@ -46,8 +46,8 @@ database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 # split design). See src/d1/schema.ts (applyGameSchema/applyIdentitySchema).
 [[d1_databases]]
 binding = "IDENTITY_DB"
-database_name = "viota"
-database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
+database_name = "vgames-identity"
+database_id = "94f6f7f8-67a5-4406-a85e-3b269a4d461d"
 
 
 # Service binding to the identity worker (grace-window proxy transport).
