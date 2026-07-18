@@ -19,7 +19,6 @@ vi.mock('../net/identity', () => ({
   setUsername: (...a: unknown[]) => setUsername(...a),
 }))
 
-vi.mock('../net/config', () => ({ serverUrl: () => 'http://sv' }))
 
 import AccountModal from './AccountModal'
 
@@ -83,7 +82,7 @@ test('a valid claim calls claimAccount, persists + reflects the new username, an
   expect(submitCta(/create account/i)).toBeEnabled()
   await userEvent.click(submitCta(/create account/i))
 
-  expect(claimAccount).toHaveBeenCalledWith('http://sv', 'vijay', 'hunter22')
+  expect(claimAccount).toHaveBeenCalledWith('vijay', 'hunter22')
   expect(quickAuth).not.toHaveBeenCalled() // a token already existed
   expect(setUsername).toHaveBeenCalledWith('vijay')
   expect(onIdentityChange).toHaveBeenCalled()
@@ -110,8 +109,8 @@ test('claiming from a fresh device (no stored token) mints one via quickAuth fir
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   await userEvent.click(submitCta(/create account/i))
 
-  expect(quickAuth).toHaveBeenCalledWith('http://sv', 'Guest123')
-  expect(claimAccount).toHaveBeenCalledWith('http://sv', 'vijay', 'hunter22')
+  expect(quickAuth).toHaveBeenCalledWith('Guest123')
+  expect(claimAccount).toHaveBeenCalledWith('vijay', 'hunter22')
 })
 
 test('switching to Log in and submitting valid credentials calls loginAccount', async () => {
@@ -122,7 +121,7 @@ test('switching to Log in and submitting valid credentials calls loginAccount', 
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   await userEvent.click(screen.getByRole('button', { name: /log in to account/i }))
 
-  expect(loginAccount).toHaveBeenCalledWith('http://sv', 'vijay', 'hunter22')
+  expect(loginAccount).toHaveBeenCalledWith('vijay', 'hunter22')
   expect(setUsername).toHaveBeenCalledWith('vijay')
   expect(onIdentityChange).toHaveBeenCalled()
 })

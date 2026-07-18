@@ -76,7 +76,7 @@ export async function createOnlineGame(
   serverUrl: string,
   opts: { displayName: string; opponents: number },
 ): Promise<CreatedGame> {
-  await quickAuth(serverUrl, opts.displayName)
+  await quickAuth(opts.displayName)
 
   const playerCount = 1 + Math.max(1, opts.opponents)
   const res = await authedFetch(serverUrl, '/games', {
@@ -102,7 +102,7 @@ export async function createOnlineRoom(
   serverUrl: string,
   opts: { displayName: string; playerCount: number; aiTakeoverMs?: number },
 ): Promise<CreatedGame> {
-  await quickAuth(serverUrl, opts.displayName)
+  await quickAuth(opts.displayName)
   const playerCount = Math.min(4, Math.max(2, opts.playerCount))
 
   const res = await authedFetch(serverUrl, '/games', {
@@ -129,7 +129,7 @@ export async function joinOnlineGame(
   serverUrl: string,
   opts: { code: string; displayName: string },
 ): Promise<CreatedGame> {
-  await quickAuth(serverUrl, opts.displayName)
+  await quickAuth(opts.displayName)
 
   const code = opts.code.trim().toUpperCase()
   const rr = await fetch(`${serverUrl}/games/resolve?code=${encodeURIComponent(code)}`)

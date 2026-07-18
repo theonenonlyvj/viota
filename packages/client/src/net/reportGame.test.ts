@@ -40,7 +40,7 @@ test('on local finish: quick-auths first (no stored token), then POSTs /games/re
   await reportLocalGame('http://sv', baseGame)
 
   expect(fetchMock).toHaveBeenCalledTimes(2)
-  expect(fetchMock.mock.calls[0]![0]).toBe('http://sv/auth/quick')
+  expect(fetchMock.mock.calls[0]![0]).toBe('http://localhost:8787/auth/quick') // quickAuth resolves authUrl() internally (dev fallback = serverUrl()'s default), not the 'http://sv' passed to reportLocalGame for the report call
 
   const [url, init] = fetchMock.mock.calls[1]!
   expect(url).toBe('http://sv/games/report')
