@@ -1,9 +1,12 @@
 /**
  * Worker-level VGames identity auth context — deliberately separate from
- * `src/do/authctx.ts` (the DO's `requireAuth`). DO auth is untouched in P1;
- * this is a standalone helper the identity routes (`/auth/set-credentials`
- * onward) AND game-side stats routes (leaderboard/me-stats/report/claim) use,
- * resolving a token to its CANONICAL (post-merge) account.
+ * `src/do/authctx.ts` (the DO's `requireAuth`). This is the small, stable
+ * "verify module" viota keeps post identity code/data split (Step 3 — see
+ * module doc in OPS-RUNBOOK.md's "code duplication accepted deliberately"):
+ * identity SIGNS tokens (now only in the hub, `vgames-platform/services/
+ * identity/`); every consumer game VERIFIES them locally. viota's own
+ * game-side stats routes (leaderboard/me-stats/report) and `d1/claim.ts` use
+ * this to resolve a token to its CANONICAL (post-merge) account.
  *
  * `verifyAnyToken` accepts both legacy viota tokens (no `epoch` claim) and new
  * vgames tokens (carry `epoch`). A legacy token skips the epoch-staleness
@@ -14,16 +17,13 @@
  * superseded-credential token stop working immediately, without a revocation
  * list.
  *
- * VGames identity code/data split (Step 1 — A11): canonicalization ALWAYS
- * reads via `env.IDENTITY_DB`, never `env.DB` — this is the one place game
- * code touches identity data, and it must go through the binding that will
- * still be correct after Step 4 moves the data. `IdentityEnv` keeps a `DB`
- * field too (identity routes in `identity/routes.ts`/`d1/accounts.ts`/
- * `d1/claim.ts` do their OWN direct accounts-table queries against it) — the
- * two callers of this shared type (identity routes, invoked with an env
- * where DB and IDENTITY_DB are aliased to the SAME identity store — see
- * `identity/router.ts` callers; and game stats routes, invoked with the
- * worker's real, UN-aliased env) both end up correct.
+ * VGames identity code/data split (Step 1 — A11, unchanged by Step 3):
+ * canonicalization ALWAYS reads via `env.IDENTITY_DB`, never `env.DB` — this
+ * is the one place game code touches identity data, and it must go through
+ * the binding that will still be correct after Step 4 moves the data.
+ * `IdentityEnv` keeps a `DB` field too because `d1/claim.ts` (game-domain —
+ * it re-tags viota's OWN `game_players`) does its own direct queries against
+ * viota's real `DB`, alongside this shared `IDENTITY_DB`-based auth check.
  */
 import { verifyAnyToken } from '../jwt'
 import { canonical } from './canonical'

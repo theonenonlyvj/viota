@@ -1,6 +1,7 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
 import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
+import { mintQuickAccount } from './helpers'
 
 /**
  * Task 7 — POST /games/report (Phase 4). Uploads a FINISHED local (client-only
@@ -19,13 +20,11 @@ beforeAll(async () => {
   await applyIdentitySchema(IDENTITY_DB())
 })
 
+// Identity code/data split (Step 3): `/auth/quick` is now a network proxy on
+// viota-worker (see src/index.ts) — seed the account directly instead. See
+// `mintQuickAccount`'s doc comment in ./helpers.
 async function quickAccount(displayName: string): Promise<{ token: string; accountId: string }> {
-  const r = await SELF.fetch('https://example.com/auth/quick', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ deviceCredential: crypto.randomUUID() + crypto.randomUUID(), displayName }),
-  })
-  return (await r.json()) as { token: string; accountId: string }
+  return mintQuickAccount(IDENTITY_DB(), displayName)
 }
 
 /** A 2-seat local game: seat 0 = the reporting human (2 plays, best=20), seat 1

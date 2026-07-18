@@ -1,6 +1,5 @@
 import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
-import { routeIdentity } from './identity/router'
 import { handleClaim } from './d1/claim'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { reconcileMerges } from './do/reconcile'
@@ -45,6 +44,48 @@ function generateRoomCode(): string {
   return [...bytes].map((b) => alphabet[b % alphabet.length]).join('')
 }
 
+/** Identity code/data split, Step 3 — the ONLY four routes viota-worker still
+ *  answers under `/auth/*`, and ONLY as a GRACE-WINDOW PROXY to the standalone
+ *  `vgames-identity` service (the real identity handlers moved to
+ *  `vgames-platform/services/identity/`, deployed as `vgames-identity`).
+ *  Every real caller already resolves `vgames-identity` directly (the client's
+ *  `authUrl()`, A2/2a) — this exists ONLY so a stale open tab / cached client
+ *  bundle still calling viota-worker's own origin keeps working for a bit.
+ *
+ *  TODO(remove after >=48h from the 2026-07-18 deploy, i.e. on/after
+ *  2026-07-20): delete this proxy block + GRACE_PROXY_PATHS/IDENTITY_ORIGIN
+ *  entirely, and let `/auth/*` 404 like any other unknown route — or, if a
+ *  more explicit signal is wanted, swap in:
+ *    if (path.startsWith('/auth/')) return json({ error: 'auth_moved' }, 410)
+ *
+ *  `/admin/merge` is DELIBERATELY NOT proxied (DROPPED): admin flows target
+ *  `vgames-identity` directly, and admin tooling isn't a browser tab that can
+ *  be caching a stale origin — it 404s below like any other unrecognized
+ *  route, same as `/auth/*` will once this block is removed. */
+const GRACE_PROXY_PATHS: ReadonlySet<string> = new Set([
+  '/auth/quick',
+  '/auth/login',
+  '/auth/set-credentials',
+  '/auth/introspect',
+])
+const IDENTITY_ORIGIN = 'https://vgames-identity.theonenonlyvj.workers.dev'
+
+/** Forward `request` to `vgames-identity` and relay its response VERBATIM
+ *  (status + body). The body is read into memory first (these are small JSON
+ *  payloads) rather than streamed, so this needs no `duplex` fetch option and
+ *  works identically under Miniflare/vitest-pool-workers (mocked `fetch`) and
+ *  in production. CORS is deliberately NOT taken from the upstream response —
+ *  the caller's `withCors` (see `fetch` below) re-applies viota-worker's OWN
+ *  `CLIENT_ORIGIN` policy on top, so the browser sees one consistent CORS
+ *  story regardless of which worker actually answered. */
+async function proxyToIdentity(request: Request, path: string, search: string): Promise<Response> {
+  const upstreamUrl = `${IDENTITY_ORIGIN}${path}${search}`
+  const headers = new Headers(request.headers)
+  headers.delete('host')
+  const body = request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.arrayBuffer()
+  return fetch(upstreamUrl, { method: request.method, headers, body })
+}
+
 /**
  * The HTTP router. Returns the raw (pre-CORS) Response; the `fetch` wrapper
  * applies CORS to it. The WebSocket-upgrade branch returns a 101 response, which
@@ -55,20 +96,9 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const path = url.pathname
 
-    // VGames Identity surface (/auth/*, /admin/merge) — routed through the
-    // SHARED router so viota-worker and the standalone vgames-identity
-    // service (src/identity-entry.ts) can't drift. Returns null for a non-
-    // identity path, in which case we fall through to gameplay routing below.
-    //
-    // Identity code/data split (Step 1/2 — A11): the identity surface reads
-    // and writes identity data via a `DB` field, because that's what BOTH
-    // deployables' own wrangler configs bind identity data to (the standalone
-    // service's `wrangler.identity.toml` keeps a single `DB` binding). Here,
-    // on viota-worker, `env.DB` is GAME data — so we alias `DB` to
-    // `env.IDENTITY_DB` for this call only, leaving the real `env` (and its
-    // real `DB`) untouched for gameplay routing below.
-    const identity = await routeIdentity(request, { ...env, DB: env.IDENTITY_DB })
-    if (identity) return identity
+    if (GRACE_PROXY_PATHS.has(path)) {
+      return proxyToIdentity(request, path, url.search)
+    }
 
     // POST /claim -> claim device ghost games into the authed account. A
     // game-domain op (re-tags viota's own game_players), not identity's — it
