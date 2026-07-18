@@ -105,6 +105,18 @@ describe('identity-entry (vgames-identity service fetch)', () => {
     expect(((await res.json()) as { accountId: string }).accountId).toBeTruthy()
   })
 
+  it('404s POST /claim — /claim is GAME-domain (re-tags viota game_players) and must NEVER return to the identity surface (split Step 2 regression lock)', async () => {
+    const res = await identityWorker.fetch(
+      new Request('https://id.example.com/claim', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ghostId: 'g'.repeat(64), deviceCredential: 'dc-claim-regression-0000' }),
+      }),
+      identEnv(),
+    )
+    expect(res.status).toBe(404)
+  })
+
   it('404s a gameplay route (POST /games, GET /me/stats)', async () => {
     const games = await identityWorker.fetch(
       new Request('https://id.example.com/games', {
