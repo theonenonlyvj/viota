@@ -1,8 +1,9 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 async function ghostToken(cred: string, name: string): Promise<string> {
   const r = await SELF.fetch('https://example.com/auth/quick', {
@@ -23,7 +24,8 @@ function setCreds(tok: string, body: unknown): Promise<Response> {
 
 describe('/auth/set-credentials', () => {
   beforeAll(async () => {
-    await applyD1Schema(DB())
+    await applyGameSchema(DB())
+    await applyIdentitySchema(IDENTITY_DB())
   })
 
   it('claims a username+password on the current ghost, in place', async () => {
@@ -31,7 +33,7 @@ describe('/auth/set-credentials', () => {
     const r = await setCreds(tok, { username: 'vee', password: 'hunter2' })
     expect(r.status).toBe(200)
     expect(await r.json()).toEqual({ ok: true })
-    const acc = await DB()
+    const acc = await IDENTITY_DB()
       .prepare(`SELECT status, username, display_name, password_hash, token_epoch FROM accounts WHERE username='vee'`)
       .first<{ status: string; username: string; display_name: string; password_hash: string; token_epoch: number }>()
     expect(acc!.status).toBe('claimed')

@@ -1,4 +1,4 @@
-import { requireAuth } from '../do/authctx'
+import { requireCanonicalAccount, type IdentityEnv } from '../identity/authctx'
 import { hashCredential, isValidDeviceCredential } from './accounts'
 
 /**
@@ -13,14 +13,21 @@ import { hashCredential, isValidDeviceCredential } from './accounts'
  *
  * Reassignment is idempotent: only unclaimed rows (or rows already the caller's)
  * are moved, so a repeated claim is a benign 0-change no-op.
+ *
+ * Identity code/data split (A1): auth goes through `requireCanonicalAccount`
+ * (not the plain `do/authctx.requireAuth`) so a claim (a) accepts BOTH legacy
+ * viota tokens and new vgames tokens (`verifyAnyToken`), and (b) lands on the
+ * caller's CURRENT canonical head (resolved via `env.IDENTITY_DB`) even if
+ * the presenting account has since been merged into another — a claim must
+ * never tag rows onto an account that is no longer live.
  */
 
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json' } })
 }
 
-export async function handleClaim(request: Request, env: { DB: D1Database; JWT_SECRET?: string }): Promise<Response> {
-  const auth = await requireAuth(request, env)
+export async function handleClaim(request: Request, env: IdentityEnv): Promise<Response> {
+  const auth = await requireCanonicalAccount(request, env)
   if (auth instanceof Response) return auth // 401 — a Bearer JWT is required
 
   let body: { ghostId?: unknown; deviceCredential?: unknown }

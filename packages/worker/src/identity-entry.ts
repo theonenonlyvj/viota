@@ -14,9 +14,14 @@ import { routeIdentity, type IdentityRouterEnv } from './identity/router'
 /** The minimal Env for the identity-only service: D1 + the player `JWT_SECRET`,
  *  the SEPARATE `ADMIN_JWT_SECRET` step-up secret (optional; `/admin/merge`
  *  fail-closes without it), and the `CLIENT_ORIGIN` CORS allowlist (optional).
- *  NO DO binding, NO cron. JWT_SECRET MUST equal viota-worker's so tokens are
+ *  NO DO binding, NO cron, and — deliberately — NO `IDENTITY_DB` binding: this
+ *  service's `DB` binding already IS the identity data (wrangler.identity.toml
+ *  keeps a single binding). JWT_SECRET MUST equal viota-worker's so tokens are
  *  interchangeable across both services — see wrangler.identity.toml. */
-export interface IdentityServiceEnv extends IdentityRouterEnv {
+export interface IdentityServiceEnv {
+  DB: D1Database
+  JWT_SECRET?: string
+  ADMIN_JWT_SECRET?: string
   CLIENT_ORIGIN?: string
 }
 
@@ -43,7 +48,14 @@ export default {
     const guard = assertSecret(env)
     if (guard) return withCors(guard, request, env)
 
-    const identity = await routeIdentity(request, env)
+    // Identity code/data split (Step 1 — A11): `routeIdentity`'s handlers
+    // resolve canonical accounts via `env.IDENTITY_DB` (see
+    // `identity/authctx.ts`). This service's own wrangler config has only a
+    // `DB` binding (it IS the identity data — no split needed on this side),
+    // so alias IDENTITY_DB to the SAME D1Database instance here rather than
+    // adding a second real binding. Byte-equivalent behavior.
+    const routerEnv: IdentityRouterEnv = { ...env, IDENTITY_DB: env.DB }
+    const identity = await routeIdentity(request, routerEnv)
     if (identity) return withCors(identity, request, env)
 
     return withCors(json({ error: 'not_found' }, 404), request, env)

@@ -1,9 +1,10 @@
 import { SELF, env } from 'cloudflare:test'
 import { it, expect, describe, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { hashCredential } from '../src/d1/accounts'
 
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 function mintCredential(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32))
@@ -42,7 +43,8 @@ async function claim(token: string, ghostId: string, deviceCredential: string): 
 }
 
 beforeAll(async () => {
-  await applyD1Schema(DB())
+  await applyGameSchema(DB())
+  await applyIdentitySchema(IDENTITY_DB())
 })
 
 describe('POST /claim', () => {

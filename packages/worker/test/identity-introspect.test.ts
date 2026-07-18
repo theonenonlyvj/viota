@@ -1,10 +1,11 @@
 import { SELF, env } from 'cloudflare:test'
 import { describe, it, expect, beforeAll } from 'vitest'
-import { applyD1Schema } from '../src/d1/schema'
+import { applyGameSchema, applyIdentitySchema } from '../src/d1/schema'
 import { signVGamesToken } from '../src/jwt'
 
 const SECRET = 'test-jwt-secret-0123456789-abcdefghijklmnop'
 const DB = () => (env as unknown as { DB: D1Database }).DB
+const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTITY_DB
 
 async function insertAccount(
   id: string,
@@ -14,7 +15,7 @@ async function insertAccount(
   tokenEpoch: number,
 ): Promise<void> {
   const now = Date.now()
-  await DB()
+  await IDENTITY_DB()
     .prepare(
       `INSERT INTO accounts (id,credential_hash,display_name,created_at,status,merged_into,token_epoch,origin_game,must_change_pw,login_fail_count,last_seen_at)
        VALUES (?,?,?,?,?,?,?,'iota',0,0,?)`,
@@ -50,7 +51,8 @@ function intro(token: string): Promise<Response> {
 
 describe('/auth/introspect', () => {
   beforeAll(async () => {
-    await applyD1Schema(DB())
+    await applyGameSchema(DB())
+    await applyIdentitySchema(IDENTITY_DB())
     await insertAccount('ia', 'I', 'claimed', null, 2)
   })
 

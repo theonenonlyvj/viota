@@ -8,9 +8,13 @@
  *
  * `routeIdentity` returns the identity route's `Response`, or `null` when the
  * path is not an identity route (the caller then continues its own routing).
+ *
+ * NOTE (identity code/data split, Step 2): `POST /claim` is NOT here — it
+ * moved to viota-worker's own routing (`src/index.ts`) since it re-tags
+ * viota's `game_players` (game-domain data, not identity's to touch). See
+ * `d1/claim.ts`.
  */
 import { handleAuthQuick } from '../d1/accounts'
-import { handleClaim } from '../d1/claim'
 import { handleSetCredentials, handleLogin, handleIntrospect, handleAdminMerge } from './routes'
 import type { IdentityEnv } from './authctx'
 import type { AdminEnv } from './admin'
@@ -44,9 +48,6 @@ export async function routeIdentity(request: Request, env: IdentityRouterEnv): P
   // by a SEPARATE admin step-up token (ADMIN_JWT_SECRET), never the
   // player-facing JWT_SECRET.
   if (request.method === 'POST' && path === '/admin/merge') return handleAdminMerge(request, env)
-
-  // POST /claim -> claim device ghost games into the authed account.
-  if (request.method === 'POST' && path === '/claim') return handleClaim(request, env)
 
   return null
 }

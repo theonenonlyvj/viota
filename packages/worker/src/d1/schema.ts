@@ -1,42 +1,26 @@
 /**
- * D1 analytics-archive schema application.
+ * D1 schema application — split along the VGames identity code/data split
+ * boundary (Step 1): GAME tables (games/game_players/moves) vs IDENTITY tables
+ * (accounts/device_credentials/account_merges/external_identities). The split
+ * is CODE-only for now — both sets of statements still describe the ONE
+ * combined `viota` D1 shape (production applies `schema/d1.sql` once,
+ * unchanged); only the TEST/application entry points are separated so game
+ * code exercises the post-split access pattern (env.DB vs env.IDENTITY_DB)
+ * ahead of the actual data move (Step 4).
  *
  * `vitest-pool-workers` does NOT auto-migrate D1 (unlike the DO's per-boot
- * `runMigrations`), so tests apply this in a `beforeAll`. Production applies the
- * mirrored `schema/d1.sql` once via `wrangler d1 execute viota --file=...`.
- *
- * Statements MUST stay byte-equivalent to `schema/d1.sql`. Each is idempotent
- * (`CREATE TABLE/INDEX IF NOT EXISTS`), so re-applying on every boot/test is
- * safe. We collapse internal whitespace and run each statement through
- * `db.exec` individually — `exec` splits its input on newlines and runs each
- * line as a statement, so a multi-line CREATE would be shredded; collapsing to a
- * single line makes each statement exactly one `exec` unit.
+ * `runMigrations`), so tests apply this in a `beforeAll`. Statements MUST stay
+ * byte-equivalent to `schema/d1.sql`. Each is idempotent (`CREATE TABLE/INDEX
+ * IF NOT EXISTS`), so re-applying on every boot/test is safe. We collapse
+ * internal whitespace and run each statement through `db.exec` individually —
+ * `exec` splits its input on newlines and runs each line as a statement, so a
+ * multi-line CREATE would be shredded; collapsing to a single line makes each
+ * statement exactly one `exec` unit.
  */
 
-/** The archive schema as individual (readable, multi-line) statements. */
-export const SCHEMA_STATEMENTS: readonly string[] = [
-  `CREATE TABLE IF NOT EXISTS accounts (
-     id                  TEXT PRIMARY KEY,
-     credential_hash     TEXT UNIQUE NOT NULL,
-     username            TEXT UNIQUE,
-     display_name        TEXT NOT NULL,
-     created_at          INTEGER NOT NULL,
-     country             TEXT,
-     region              TEXT,
-     timezone            TEXT,
-     status              TEXT NOT NULL DEFAULT 'ghost',
-     password_hash       TEXT,
-     must_change_pw      INTEGER NOT NULL DEFAULT 0,
-     token_epoch         INTEGER NOT NULL DEFAULT 0,
-     claimed_at          INTEGER,
-     last_seen_at        INTEGER,
-     merged_into         TEXT,
-     origin_game         TEXT NOT NULL DEFAULT 'iota',
-     login_fail_count    INTEGER NOT NULL DEFAULT 0,
-     login_locked_until  INTEGER
-   )`,
-  `CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)`,
-  `CREATE INDEX IF NOT EXISTS idx_accounts_merged ON accounts(merged_into)`,
+/** games/game_players/moves — the lobby registry + per-seat/per-move archive.
+ *  Lives on the `DB` binding (viota's own store; never moves). */
+export const GAME_SCHEMA_STATEMENTS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS games (
      game_uuid        TEXT PRIMARY KEY,
      mode             TEXT CHECK (mode IN ('online','local')),
@@ -88,6 +72,62 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
      created_at             INTEGER,
      PRIMARY KEY (game_uuid, move_index)
    )`,
+  // UNUSED at runtime: live leaderboards are computed in src/stats/leaderboard.ts
+  // (TS handlers, two-step DB/IDENTITY_DB lookup — see A8) — this view is kept
+  // as schema-documented reference only, and can no longer be a real cross-DB
+  // JOIN once identity data actually moves (Step 4); left as-is (harmless,
+  // unused) rather than deleted.
+  `CREATE VIEW IF NOT EXISTS v_leaderboard AS
+   SELECT a.id AS account_id, a.display_name, g.game_type,
+          COUNT(*) AS games,
+          SUM(gp.result='win')  AS wins,
+          SUM(gp.result='loss') AS losses,
+          SUM(COALESCE(gp.final_score,0)) AS total_score
+   FROM game_players gp
+   JOIN games g    ON g.game_uuid = gp.game_uuid
+   JOIN accounts a ON a.id        = gp.account_id
+   WHERE gp.owner_type='human' AND g.status='completed'
+     AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
+   GROUP BY a.id, g.game_type`,
+  `CREATE VIEW IF NOT EXISTS v_leaderboard_all AS
+   SELECT a.id AS account_id, a.display_name,
+          COUNT(*) AS games, SUM(gp.result='win') AS wins,
+          ROUND(1.0*SUM(gp.result='win')/COUNT(*), 4) AS win_rate
+   FROM game_players gp
+   JOIN games g    ON g.game_uuid = gp.game_uuid
+   JOIN accounts a ON a.id        = gp.account_id
+   WHERE gp.owner_type='human' AND g.status='completed'
+     AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
+   GROUP BY a.id`,
+]
+
+/** accounts/device_credentials/account_merges/external_identities — the
+ *  VGames identity store. Lives on the `IDENTITY_DB` binding from game code's
+ *  perspective (see identity/authctx.ts); the identity SERVICE's own `DB`
+ *  binding points at the same data (wrangler.identity.toml). */
+export const IDENTITY_SCHEMA_STATEMENTS: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS accounts (
+     id                  TEXT PRIMARY KEY,
+     credential_hash     TEXT UNIQUE NOT NULL,
+     username            TEXT UNIQUE,
+     display_name        TEXT NOT NULL,
+     created_at          INTEGER NOT NULL,
+     country             TEXT,
+     region              TEXT,
+     timezone            TEXT,
+     status              TEXT NOT NULL DEFAULT 'ghost',
+     password_hash       TEXT,
+     must_change_pw      INTEGER NOT NULL DEFAULT 0,
+     token_epoch         INTEGER NOT NULL DEFAULT 0,
+     claimed_at          INTEGER,
+     last_seen_at        INTEGER,
+     merged_into         TEXT,
+     origin_game         TEXT NOT NULL DEFAULT 'iota',
+     login_fail_count    INTEGER NOT NULL DEFAULT 0,
+     login_locked_until  INTEGER
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_accounts_status ON accounts(status)`,
+  `CREATE INDEX IF NOT EXISTS idx_accounts_merged ON accounts(merged_into)`,
   `CREATE TABLE IF NOT EXISTS device_credentials (
      credential_hash TEXT PRIMARY KEY,
      account_id      TEXT NOT NULL REFERENCES accounts(id),
@@ -115,34 +155,37 @@ export const SCHEMA_STATEMENTS: readonly string[] = [
      PRIMARY KEY (game, id_kind, external_id)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_extid_account ON external_identities(account_id)`,
-  // UNUSED at runtime: live leaderboards are computed in src/stats/leaderboard.ts (TS handlers); views kept as schema-documented reference only
-  `CREATE VIEW IF NOT EXISTS v_leaderboard AS
-   SELECT a.id AS account_id, a.display_name, g.game_type,
-          COUNT(*) AS games,
-          SUM(gp.result='win')  AS wins,
-          SUM(gp.result='loss') AS losses,
-          SUM(COALESCE(gp.final_score,0)) AS total_score
-   FROM game_players gp
-   JOIN games g    ON g.game_uuid = gp.game_uuid
-   JOIN accounts a ON a.id        = gp.account_id
-   WHERE gp.owner_type='human' AND g.status='completed'
-     AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
-   GROUP BY a.id, g.game_type`,
-  `CREATE VIEW IF NOT EXISTS v_leaderboard_all AS
-   SELECT a.id AS account_id, a.display_name,
-          COUNT(*) AS games, SUM(gp.result='win') AS wins,
-          ROUND(1.0*SUM(gp.result='win')/COUNT(*), 4) AS win_rate
-   FROM game_players gp
-   JOIN games g    ON g.game_uuid = gp.game_uuid
-   JOIN accounts a ON a.id        = gp.account_id
-   WHERE gp.owner_type='human' AND g.status='completed'
-     AND (gp.total_moves = 0 OR gp.ai_move_count * 2 <= gp.total_moves)
-   GROUP BY a.id`,
 ]
 
-/** Apply the archive schema idempotently. Safe to call repeatedly. */
-export async function applyD1Schema(db: D1Database): Promise<void> {
-  for (const stmt of SCHEMA_STATEMENTS) {
+/** Back-compat: every statement (game + identity), for a single combined `db`
+ *  — production's actual runtime shape (one physical `viota` D1) until Step 4,
+ *  and any test that doesn't care about the DB/IDENTITY_DB split (pure
+ *  game-flow: no accounts/device/merge table access, direct or via an
+ *  identity-dependent endpoint). */
+export const SCHEMA_STATEMENTS: readonly string[] = [...GAME_SCHEMA_STATEMENTS, ...IDENTITY_SCHEMA_STATEMENTS]
+
+async function applyStatements(db: D1Database, statements: readonly string[]): Promise<void> {
+  for (const stmt of statements) {
     await db.exec(stmt.replace(/\s+/g, ' ').trim())
   }
+}
+
+/** Apply ONLY the game schema (games/game_players/moves) to `db`. */
+export async function applyGameSchema(db: D1Database): Promise<void> {
+  await applyStatements(db, GAME_SCHEMA_STATEMENTS)
+}
+
+/** Apply ONLY the identity schema (accounts/device_credentials/account_merges/
+ *  external_identities) to `db`. */
+export async function applyIdentitySchema(db: D1Database): Promise<void> {
+  await applyStatements(db, IDENTITY_SCHEMA_STATEMENTS)
+}
+
+/** Apply the FULL archive schema (game + identity) to `db`, idempotently.
+ *  Safe to call repeatedly. Back-compat single-binding entry point — see
+ *  module doc. New split-aware tests should call `applyGameSchema(env.DB)` +
+ *  `applyIdentitySchema(env.IDENTITY_DB)` instead. */
+export async function applyD1Schema(db: D1Database): Promise<void> {
+  await applyGameSchema(db)
+  await applyIdentitySchema(db)
 }

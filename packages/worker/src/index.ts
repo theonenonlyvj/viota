@@ -1,6 +1,7 @@
 import { assertSecret } from './auth'
 import { GameDO, type Env } from './game-do'
 import { routeIdentity } from './identity/router'
+import { handleClaim } from './d1/claim'
 import { resolveActiveGameByCode, listResumableGames, setGameStatus } from './do/archive'
 import { requireAuth } from './do/authctx'
 import { handleAdminBackfillStats } from './stats/backfill'
@@ -52,12 +53,31 @@ async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url)
   const path = url.pathname
 
-    // VGames Identity surface (/auth/*, /claim, /admin/merge) — routed through
-    // the SHARED router so viota-worker and the standalone vgames-identity
+    // VGames Identity surface (/auth/*, /admin/merge) — routed through the
+    // SHARED router so viota-worker and the standalone vgames-identity
     // service (src/identity-entry.ts) can't drift. Returns null for a non-
     // identity path, in which case we fall through to gameplay routing below.
-    const identity = await routeIdentity(request, env)
+    //
+    // Identity code/data split (Step 1/2 — A11): the identity surface reads
+    // and writes identity data via a `DB` field, because that's what BOTH
+    // deployables' own wrangler configs bind identity data to (the standalone
+    // service's `wrangler.identity.toml` keeps a single `DB` binding). Here,
+    // on viota-worker, `env.DB` is GAME data — so we alias `DB` to
+    // `env.IDENTITY_DB` for this call only, leaving the real `env` (and its
+    // real `DB`) untouched for gameplay routing below.
+    const identity = await routeIdentity(request, { ...env, DB: env.IDENTITY_DB })
     if (identity) return identity
+
+    // POST /claim -> claim device ghost games into the authed account. A
+    // game-domain op (re-tags viota's own game_players), not identity's — it
+    // stays on viota-worker's own routing (NOT the shared identity router)
+    // so it gets the TRUE env: DB = viota's game data (what gets re-tagged),
+    // IDENTITY_DB = where the caller's token/canonical head is resolved from
+    // (see d1/claim.ts). The client already calls this on the game URL, so
+    // there is no client-visible change.
+    if (request.method === 'POST' && path === '/claim') {
+      return handleClaim(request, env)
+    }
 
     // POST /admin/backfill-stats -> Phase 3: one-time (idempotent) backfill of
     // result/opponent_kind/stats/total_moves/ai_move_count for online games
