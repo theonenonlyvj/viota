@@ -349,15 +349,24 @@ export default {
    *  - the merge reconciler (identity code/data split, A1): re-tag viota's own
    *    `game_players` for every currently-active IDENTITY_DB merge, every
    *    sweep, no watermark (see do/reconcile.ts). Awaited (not
-   *    ctx.waitUntil'd) so a reconciler failure surfaces in the scheduled
-   *    invocation's own error/retry semantics rather than silently vanishing.
+   *    ctx.waitUntil'd) BUT try/catch-ISOLATED (2026-07-18 checker-council
+   *    hardening): the reconciler is eventually-consistent by design (it
+   *    self-heals next sweep), while the stale-game sweep below is
+   *    liveness-critical (never-stall) — a reconciler failure must log
+   *    loudly (persisted Workers Logs) but NEVER starve the game sweep.
+   *    (While migration 0005 was missing in prod, an unguarded reconciler
+   *    throw would have aborted every sweep — exactly this failure class.)
    * Lightweight: two indexed D1 queries + a fire-and-forget poke per stale game.
    */
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     if (assertSecret(env)) return // fail-closed if misconfigured
     const now = Date.now()
 
-    await reconcileMerges(env.DB, env.IDENTITY_DB, now)
+    try {
+      await reconcileMerges(env.DB, env.IDENTITY_DB, now)
+    } catch (err) {
+      console.error('merge reconciler failed (will retry next sweep; game sweep continues):', err)
+    }
 
     const active = await env.DB.prepare(
       `SELECT game_uuid FROM games WHERE status = 'active' AND last_activity_at < ?`,

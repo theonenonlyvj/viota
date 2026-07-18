@@ -27,13 +27,12 @@ binding = "DB"
 database_name = "viota"
 database_id = "f777f1c7-8ee0-4520-8a87-83a8f6f387a9"
 
-# IDENTITY_DB (VGames identity code/data split, Step 1 — A11): a SECOND binding
-# pointed at the SAME database_id as DB above (two bindings, one DB, on
-# purpose). Game code reads identity data (canonicalization, cross-DB name
-# lookups, the merge reconciler) through THIS binding rather than DB, so the
-# access path is already correct before the data itself ever moves. Step 4 of
-# the split (data split) changes only the database_id here (to the new
-# standalone `vgames-identity` D1) — no code changes at that point.
+# IDENTITY_DB (VGames identity split — Step 4 EXECUTED 2026-07-18): points at
+# the standalone `vgames-identity` D1 (identity data lives THERE now; the old
+# identity tables inside the `viota` D1 above are a frozen archival copy).
+# Game code reads identity data (canonicalization, cross-DB name lookups, the
+# merge reconciler) through THIS binding — READ-ONLY by convention (A9; a
+# worker test enforces no INSERT/UPDATE/DELETE through it).
 #
 # ⚠ Locally/in tests, vitest-pool-workers 0.18.x keys local D1 storage by
 # database_id, NOT binding name — so DB and IDENTITY_DB alias ONE local store
