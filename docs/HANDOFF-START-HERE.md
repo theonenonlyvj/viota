@@ -1,4 +1,13 @@
-# viota / VGames — START HERE (cold-start handoff, 2026-07-14)
+# viota / VGames — START HERE (viota-specific threads)
+
+> # 📍 2026-08-03 — THE COLD-START ENTRY POINT MOVED
+> **New agent: read `../../vgames-platform/docs/AGENT-HANDOFF.md` FIRST** (architecture, invariants,
+> deploy matrix, all open work by owner, gotchas), then `../../vgames-platform/docs/CURRENT-STATE.md`.
+> This file is now **viota-specific detail only, and parts of it are historical**:
+> Thread 1 (stats/leaderboards) SHIPPED + deployed 2026-07-14. Thread 4 (vjaipur cutover) SHIPPED 2026-07-13.
+> The identity code+data split executed 2026-07-18 — identity no longer lives in this repo (it deploys from
+> `vgames-platform/services/identity/` against its own D1). Where this file and AGENT-HANDOFF disagree,
+> **AGENT-HANDOFF wins.**
 
 > ## ⚡ 2026-07-15 UPDATE (overnight council + fixes — read before the threads below)
 > Where stale, this block wins over the body below.
@@ -48,7 +57,7 @@ structured choices, "show before commit," flags-don't-guess; see his auto-memory
 - **Deploys:** `wrangler` is authed as Vijay (OAuth). Do NOT push to remotes / deploy to prod / mutate live
   Supabase **unattended or without Vijay's explicit go** — except: he has standing approval for the viota
   work he's actively driving (that's how the fixes + P1 got shipped). When unsure, stage + ask.
-- **Workspace boundary:** only write inside `/Users/vijayram/Cursor`, `/tmp`, the mac temp dir, `~/.claude`.
+- **Workspace boundary:** only write inside `the relevant game repository`, `/tmp`, the mac temp dir, `~/.claude`.
   A PreToolUse hook enforces it. Git ops belong inside a subproject; never `git init` the umbrella.
 - **Visual checks:** a committed Playwright harness exists at `viota/packages/client/e2e/rotate-check.mjs`
   (raw `playwright` lib). NOTE: npm/pnpm installs of `playwright` were hanging (registry throttling); the
@@ -56,12 +65,12 @@ structured choices, "show before commit," flags-don't-guess; see his auto-memory
   (`~/.npm/_npx/*/node_modules/playwright*`) into `e2e/node_modules` if a fresh install won't complete.
 
 ## Repos + live state
-- **viota** `/Users/vijayram/Cursor/viota` — Iota. Cloudflare Worker+DO+D1 (worker=**viota-worker**, D1=**viota**)
+- **viota** `the viota repository` — Iota. Cloudflare Worker+DO+D1 (worker=**viota-worker**, D1=**viota**)
   + React/Vite client on Pages (**viota.pages.dev**). `main` is canonical + deployed. Worker URL:
   `https://viota-worker.theonenonlyvj.workers.dev`.
-- **vjaipur** `/Users/vijayram/Cursor/vjaipur` — Jaipur. Node+Socket.IO on Render + Supabase. `main` is LIVE
+- **vjaipur** `the vjaipur repository` — Jaipur. Node+Socket.IO on Render + Supabase. `main` is LIVE
   and **deliberately un-cutover** (see Thread 4).
-- **vgames-platform** `/Users/vijayram/Cursor/vgames-platform` — the shared-platform program hub (docs +
+- **vgames-platform** `the vgames-platform repository` — the shared-platform program hub (docs +
   migration scripts + runbooks; git repo).
 
 ---
