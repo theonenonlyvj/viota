@@ -1,7 +1,7 @@
 # viota — Landing Redesign + Design System (spec)
 
 **Date:** 2026-07-08
-**Author:** Claude (front-end redesign brainstorm with Vijay, via the visual companion)
+**Author:** project team (front-end redesign brainstorm with the maintainer, via the visual companion)
 **Scope:** The **landing page** (`/` → `Home.tsx`) and the **shared design system** it
 establishes (tokens, fonts, button, footer, layout). Lobby and gameplay are **separate,
 later** brainstorms that will *reuse* this system.
@@ -15,10 +15,10 @@ later** brainstorms that will *reuse* this system.
 
 ## 0. The one hard rule (repeat)
 
-**The Iota card tile (`Card.tsx`) is LOCKED.** Vijay spent real time designing it. Do **not**
+**The Iota card tile (`Card.tsx`) is LOCKED.** Do **not**
 restyle the card — colors, shapes, numbers, the wild star, size, radius, shadow all stay as
 shipped. The redesign styles *everything around* the card. The card may be *rendered* in new
-places (e.g. the hero art) but never modified without Vijay's explicit consent.
+places (e.g. the hero art) but never modified without the maintainer's explicit consent.
 
 ---
 
@@ -236,7 +236,7 @@ Fredoka 500, text `--text-footer`, **links `--brand-cyan`** with an underline (h
 **Scope (decided):** appears on **chrome pages only — landing, lobby, waiting room. NOT on the
 live game board** (`Game.tsx` / `OnlineGame.tsx`). This is a **deliberate departure** from the
 brief's "every page/view" Definition of Done — the brief's game guidance is actually to *dock a
-slim footer below the play area*, but **Vijay signed off on chrome-only (2026-07-08)** to keep
+slim footer below the play area*, but **the maintainer signed off on chrome-only (2026-07-08)** to keep
 the board clean. Implement via a shared chrome **`Layout`** wrapper that renders the footer once;
 the two game routes render outside that wrapper (or a `noFooter` flag).
 
@@ -248,7 +248,7 @@ the two game routes render outside that wrapper (or a `noFooter` flag).
   below the copy (§3 Mobile); wordmark uses `clamp()`; faint depth cards hidden. No horizontal
   scroll at 320px.
 - Buttons wrap; tap targets ≥ 44px. Modals are full-width sheets on narrow screens.
-- Mobile matters (Vijay plays with friends on phones) — verify at 320/375/414 widths.
+- Mobile matters — verify at 320/375/414 widths.
 
 ## 8. Accessibility
 
@@ -272,7 +272,7 @@ the two game routes render outside that wrapper (or a `noFooter` flag).
 - **Local-game persistence** (the store/localStorage feature behind local resume) — owned by
   **another agent**. This slice only builds the landing/lobby resume UI + the provider seam
   (§5A) that consumes it.
-- `og-image.png` refresh + `index.html` `<title>` ("Iota" → confirm public name with Vijay
+- `og-image.png` refresh + `index.html` `<title>` ("Iota" → confirm public name with the maintainer
   before splashing large) — follow-ups, not blockers.
 
 ## 10. Files (anticipated touch list)

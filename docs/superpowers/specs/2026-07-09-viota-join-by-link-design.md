@@ -1,7 +1,7 @@
 # viota — Join-by-Link (spec)
 
 **Date:** 2026-07-09
-**Author:** Claude (with Vijay)
+**Author:** project team (with the maintainer)
 **Scope:** Make the shareable room URL `https://viota.pages.dev/lobby/:code` work as an **invite**
 for someone who isn't in the room yet (auto-join). **Client-only** — reuses the existing
 `joinOnlineGame`; no worker/engine/protocol/D1 change.
@@ -63,4 +63,4 @@ This replaces the current "bounce to home" behavior. Reuses the design system (a
 - `Room` gate: session matching the code → `WaitingRoom`; no session → `JoinRoom`; session for a
   *different* code → `JoinRoom`.
 - `main.routes` footer test still green (mock updated to `Room`). `WaitingRoom` tests unchanged.
-- Full client suite + `tsc` + build green. Client-only; deploy gated on Vijay.
+- Full client suite + `tsc` + build green. Client-only; deploy gated on the maintainer.

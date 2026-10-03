@@ -65,7 +65,7 @@ test('quickAuth throws on a non-ok response', async () => {
 
 test('getUsername is null until a claimed username is stored', () => {
   expect(getUsername()).toBeNull()
-  setUsername('vijay')
-  expect(getUsername()).toBe('vijay')
-  expect(localStorage.getItem('viota_username')).toBe('vijay')
+  setUsername('alex')
+  expect(getUsername()).toBe('alex')
+  expect(localStorage.getItem('viota_username')).toBe('alex')
 })

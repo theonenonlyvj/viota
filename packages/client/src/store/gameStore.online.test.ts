@@ -58,11 +58,11 @@ test('applyOnlineView ignores a stale (lower) moveIndex', () => {
 test('applyOnlineView derives player display names from the server roster (seat order)', () => {
   store().applyOnlineView(view({
     players: [
-      { seat: 0, displayName: 'Vijay', ownerType: 'human' },
+      { seat: 0, displayName: 'Alex', ownerType: 'human' },
       { seat: 1, displayName: 'AI 2', ownerType: 'ai' },
     ],
   }), 5)
-  expect(store().players).toEqual(['Vijay', 'AI 2'])
+  expect(store().players).toEqual(['Alex', 'AI 2'])
 })
 
 test('applyOnlineView leaves players empty when the view carries no roster (caller falls back)', () => {

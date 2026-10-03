@@ -43,7 +43,7 @@ affordances, game-over / winner announcement, and the action buttons.
 
 ### 2. "Online vs AI, done right"  ← design fork + then the modal toggle
 Today online-vs-AI runs the AI **server-side** in the Durable Object (`do/drive.ts` → `AIAgent('medium')`,
-hardcoded; expert would blow the DO CPU budget → floored to a pass). Vijay's instinct: maybe the client
+hardcoded; expert would blow the DO CPU budget → floored to a pass). One proposed direction is for the client
 should run the AI (like local mode) and the server just **log** the moves (history/replay/resume).
 - **Decide the architecture:** server-side AI (bound expert to fit CPU) **vs.** client-runs-AI + server
   logs (client CPU → any difficulty free; server accepts owner-submitted moves for AI seats in a solo
@@ -88,7 +88,7 @@ should run the AI (like local mode) and the server just **log** the moves (histo
   longer matches the live hero. Regenerate a 1200×630 og-image from the new landing.
 - ✅ **DONE (commit `afa64a1`) — Public name / "Iota" trademark** — `index.html` `<title>` and OG tags still say **"Iota"** (the
   trademarked name); the UI wordmark says **viota**. Decide the public name before splashing it large,
-  then reconcile `<title>` / OG / any "Iota" copy. (Vijay has a `renamePending` flag on his bio.) —
+  then reconcile `<title>` / OG / any "Iota" copy. —
   reconciled: `<title>`/OG/Twitter tags all say "viota" now.
 - **Screenshots** — the personal-site bio references placeholder `/screenshots/iota.png`; real
   screenshots of the redesigned UI would be nice (that's the `personal-site` repo, not viota, but part
@@ -103,7 +103,7 @@ should run the AI (like local mode) and the server just **log** the moves (histo
   username+password, cross-device login, `device_credentials` 1:many, PBKDF2). See
   `vgames-platform/docs/CURRENT-STATE.md`. Original stale text below, kept for history:
   a unified cross-game login (viota + vjaipur), built ONCE, email/reset included.
-  Vijay's 2026-07-09 call: don't build viota-only accounts. Today = ghost/quick-account only (device
+  The platform decision was not to build viota-only accounts. Today = ghost/quick-account only (device
   credential in localStorage; lost on clear-data / new browser / new device). Full design (ghost →
   create = attach username+password to current ghost → login elsewhere = bind browser + merge ghost
   games; `device_credentials` 1:many; PBKDF2; friend-scale manual D1 reset) is captured separately.
@@ -112,7 +112,7 @@ should run the AI (like local mode) and the server just **log** the moves (histo
 
 ## How to pick up a slice
 
-1. `superpowers:brainstorming` (design direction WITH Vijay) → commit a spec in `docs/superpowers/specs/`.
+1. `superpowers:brainstorming` (confirm the design direction) → commit a spec in `docs/superpowers/specs/`.
 2. `superpowers:writing-plans` → a TDD plan in `docs/superpowers/plans/`.
 3. `superpowers:subagent-driven-development` — fresh implementer + spec/quality reviewer per task, Opus
    whole-branch review at the end. Branch off `main` in a worktree.

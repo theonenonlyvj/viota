@@ -1,6 +1,6 @@
 # viota — How-to-Play / In-Game Settings / Practice — HANDOFF
 
-> For the next agent (or Vijay) picking up this area. Everything you need: what
+> For the next agent (or the maintainer) picking up this area. Everything you need: what
 > shipped, how it works, what's deliberately deferred, and the decisions behind it.
 
 ## 0. TL;DR / status
@@ -59,22 +59,22 @@
 
 Ground truth: `ref/iota_rules.txt`, `ref/viota_first_order_principles.rtf`, `ref/7f-iota-rulebook.pdf`. Flags surfaced during this work (keep them in mind if you touch the rules content):
 - **Stalemate (3 all-pass rounds)** and **ties / optional sudden-death** are viota **house-rule *additions*** — not in the original rulebook. The content labels them as such.
-- **Wild-starter reshuffle** — the rulebook is silent; the engine deals a non-wild starter, matching Vijay's ruling. Documented as a clarification.
+- **Wild-starter reshuffle** — the rulebook is silent; the engine deals a non-wild starter, matching the maintainer's ruling. Documented as a clarification.
 - **Scoring wording is engine-exact:** the ×2 fires on **playing exactly 4 cards**, NOT on "emptying your hand"; the **game-ending ×2** (draw pile empty AND you play your last card) is a *separate* rule. Lots **compound** (n lots → ×2ⁿ; 2 lots = ×4). A card shared by two lines counts once *per line*; wilds are worth 0.
 - **Source-doc typo:** `ref/iota_rules.txt`'s Turn-4 worked example lists coordinate `(2,1)` twice (the second should be `(3,1)`). Not propagated — `rules/content.test.ts` reconstructs the example with corrected coords and asserts the engine reproduces `6 / 6 / 34 / 208`.
 
 ## 4. DEFERRED / OPEN WORK — read this before starting anything new here
 
-These were consciously scoped OUT of PR #1 (decisions already made with Vijay). None are started yet (verified: no `resign`, no auto-highlight toggle anywhere in the tree).
+These were consciously scoped OUT of PR #1 (decisions already made with the maintainer). None are started yet (verified: no `resign`, no auto-highlight toggle anywhere in the tree).
 
-### 4a. Local resign — "next" (Vijay: "cut it from this scope, we'll do resign next")
+### 4a. Local resign — "next" (the maintainer: "cut it from this scope, we'll do resign next")
 Not trivial. It is a real mini-feature, not a toggle:
 - **Halt the AI worker loop** — a resign that only sets `phase:'game-over'` gets silently un-resigned by an in-flight `handleWorkerMessage` / the self-reposting `setTimeout` in `gameStore.ts`. Needs a phase/epoch guard + clearing pending timers.
 - **Represent the winner** — the local game-over screen currently declares *no* winner (it just lists scores), and both the ghost-stats winner and any label derive from `scores.indexOf(max)`. So a resign while *ahead* would show/record **you** as the winner. Add a `resigned`/winner field. This also closes `ref/improvements.txt`'s "game over should tell you you won" — add a proper **winner banner** to the local game-over regardless.
 - **Ghost stats** — `recordGhostGame` fires on any `game-over` transition; a resign must be skipped or recorded as a loss.
 - **Multi-AI ruling** — with 2–3 AI opponents, define who "wins" (e.g. highest-scoring AI).
 
-### 4b. Scored ONLINE resign — separate certified-backend feature (needs a Vijay ruling)
+### 4b. Scored ONLINE resign — separate certified-backend feature (needs a product ruling)
 A real online resign is NOT a client change: new Durable-Object protocol action (idempotent, redaction-safe), interacting with the trickiest existing subsystem (AI-takeover / reclaim / veto — a resigned seat must not be AI-covered or reclaimable), plus a lockstep client+worker deploy. **Open ruling needed:** in a 3–4 player game, does one player resigning *end the game* (highest current score wins) or *drop the seat* and let the rest play on? Give it its own brainstorm→spec→plan→certify→deploy pass. (Today's in-game "Quit to menu" online is a **pause** — navigate home, keep the resumable session; it is NOT a resign.)
 
 ### 4c. In-game "auto-highlight legal moves" toggle — deferred to the redesign

@@ -69,7 +69,7 @@ test('a too-short/invalid username blocks submit', async () => {
 
 test('a too-short password blocks submit', async () => {
   renderModal()
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'short')
   expect(submitCta(/create account/i)).toBeDisabled()
 })
@@ -77,22 +77,22 @@ test('a too-short password blocks submit', async () => {
 test('a valid claim calls claimAccount, persists + reflects the new username, and shows success', async () => {
   claimAccount.mockResolvedValue({ ok: true })
   renderModal()
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   expect(submitCta(/create account/i)).toBeEnabled()
   await userEvent.click(submitCta(/create account/i))
 
-  expect(claimAccount).toHaveBeenCalledWith('vijay', 'hunter22')
+  expect(claimAccount).toHaveBeenCalledWith('alex', 'hunter22')
   expect(quickAuth).not.toHaveBeenCalled() // a token already existed
-  expect(setUsername).toHaveBeenCalledWith('vijay')
+  expect(setUsername).toHaveBeenCalledWith('alex')
   expect(onIdentityChange).toHaveBeenCalled()
-  expect(await screen.findByText(/vijay/i)).toBeInTheDocument()
+  expect(await screen.findByText(/alex/i)).toBeInTheDocument()
 })
 
 test('a claim collision (username taken) shows an inline error and does not reflect a new identity', async () => {
   claimAccount.mockResolvedValue({ ok: false, error: 'username_taken' })
   renderModal()
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   await userEvent.click(submitCta(/create account/i))
 
@@ -105,24 +105,24 @@ test('claiming from a fresh device (no stored token) mints one via quickAuth fir
   mockToken = null
   claimAccount.mockResolvedValue({ ok: true })
   renderModal()
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   await userEvent.click(submitCta(/create account/i))
 
   expect(quickAuth).toHaveBeenCalledWith('Guest123')
-  expect(claimAccount).toHaveBeenCalledWith('vijay', 'hunter22')
+  expect(claimAccount).toHaveBeenCalledWith('alex', 'hunter22')
 })
 
 test('switching to Log in and submitting valid credentials calls loginAccount', async () => {
   loginAccount.mockResolvedValue({ ok: true, mustChangePassword: false })
   renderModal()
   await userEvent.click(screen.getByRole('button', { name: /^log in$/i }))
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'hunter22')
   await userEvent.click(screen.getByRole('button', { name: /log in to account/i }))
 
-  expect(loginAccount).toHaveBeenCalledWith('vijay', 'hunter22')
-  expect(setUsername).toHaveBeenCalledWith('vijay')
+  expect(loginAccount).toHaveBeenCalledWith('alex', 'hunter22')
+  expect(setUsername).toHaveBeenCalledWith('alex')
   expect(onIdentityChange).toHaveBeenCalled()
 })
 
@@ -130,7 +130,7 @@ test('a login error shows an inline message', async () => {
   loginAccount.mockResolvedValue({ ok: false, error: 'invalid_credentials' })
   renderModal()
   await userEvent.click(screen.getByRole('button', { name: /^log in$/i }))
-  await userEvent.type(screen.getByLabelText(/username/i), 'vijay')
+  await userEvent.type(screen.getByLabelText(/username/i), 'alex')
   await userEvent.type(screen.getByLabelText(/password/i), 'wrongpass')
   await userEvent.click(screen.getByRole('button', { name: /log in to account/i }))
 

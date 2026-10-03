@@ -430,8 +430,8 @@ git commit -m "feat(client): restyle waiting room to the design system"
 
 - [ ] **Step 1: Full suite** — `pnpm --filter @viota/client test` → all green. Fix any regression without weakening.
 - [ ] **Step 2: Typecheck + build** — `pnpm --filter @viota/client exec tsc --noEmit` clean, then `VITE_SERVER_URL=https://viota-worker.theonenonlyvj.workers.dev pnpm --filter @viota/client build` clean.
-- [ ] **Step 3: Visual check (real browser)** — `pnpm --filter @viota/client dev`, open the URL, go to `/lobby`: two panels (Create / Join) on the aurora, `viota` wordmark, chamfer inputs + pills + Buttons, no solo Play-vs-AI, focus rings visible on every control (Tab through), resume strip when present, no 320px overflow. Create a room → the waiting room shows the code card, roster chips, host Start (disabled until ≥2), Leave. (Deploy only after Vijay signs off.)
-- [ ] **Step 4: Branch ready** — `git status` clean; hand back to the controller for the final whole-branch review + Vijay's merge/deploy call.
+- [ ] **Step 3: Visual check (real browser)** — `pnpm --filter @viota/client dev`, open the URL, go to `/lobby`: two panels (Create / Join) on the aurora, `viota` wordmark, chamfer inputs + pills + Buttons, no solo Play-vs-AI, focus rings visible on every control (Tab through), resume strip when present, no 320px overflow. Create a room → the waiting room shows the code card, roster chips, host Start (disabled until ≥2), Leave. (Deploy only after the maintainer signs off.)
+- [ ] **Step 4: Branch ready** — `git status` clean; hand back to the controller for the final whole-branch review + the maintainer's merge/deploy call.
 
 ---
 

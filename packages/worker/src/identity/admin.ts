@@ -8,7 +8,7 @@
  * (checking only one of the two would still leave a same-secret,
  * wrong-context token able to slip through if that context ever shared an
  * audience). There is no player-facing endpoint that mints an admin token; it
- * is minted out-of-band (Vijay, manually — MUST set `iss:'vgames'` and
+ * is minted out-of-band by an authorized operator — MUST set `iss:'vgames'` and
  * `aud:'vgames-admin'`) and never touches D1.
  */
 import { jwtVerify } from 'jose'

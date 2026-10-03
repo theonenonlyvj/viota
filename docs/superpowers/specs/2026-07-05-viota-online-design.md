@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-05
 **Status:** Approved design, pre-implementation
-**Author:** Vijay + Claude
+**Author:** the maintainer + project team
 
 ## 1. Goal & Non-Goals
 

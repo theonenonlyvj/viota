@@ -32,7 +32,7 @@
 - `claimAccount(username: string, password: string): Promise<{ ok: true } | { ok: false; error: string }>` — `POST /auth/set-credentials` (Bearer).
 - `loginAccount(username: string, password: string): Promise<{ ok: true; mustChangePassword: boolean } | { ok: false; error: string }>` — `POST /auth/login {username, password, deviceCredential}`; on ok, store the returned token + accountId.
 
-- [ ] **Step 1: Failing test** — mock fetch; assert `claimAccount('vijay','hunter2')` POSTs to `/auth/set-credentials` with the Bearer header + `{username,password}` and maps 409→`{ok:false,error:'username_taken'|'not_ghost'}`; `loginAccount` POSTs `{username,password,deviceCredential}`, stores the token on success, maps 401→`{ok:false,error:'invalid_credentials'}`.
+- [ ] **Step 1: Failing test** — mock fetch; assert `claimAccount('player_one','hunter2')` POSTs to `/auth/set-credentials` with the Bearer header + `{username,password}` and maps 409→`{ok:false,error:'username_taken'|'not_ghost'}`; `loginAccount` POSTs `{username,password,deviceCredential}`, stores the token on success, maps 401→`{ok:false,error:'invalid_credentials'}`.
 - [ ] **Step 2:** Run → FAIL.
 - [ ] **Step 3:** Implement `account.ts` following `net/lobby.ts`/`net/ghost.ts` conventions (read them). Use `authedFetch` for claim (needs Bearer), plain `fetch` for login (no Bearer). On login success, persist token+accountId via the same setters `identity.ts` uses.
 - [ ] **Step 4:** Run → PASS. **Step 5:** `pnpm --filter @viota/client test` green. **Step 6:** Commit `feat(client): VGames claim/login net module`.

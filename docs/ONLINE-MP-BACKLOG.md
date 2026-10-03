@@ -1,6 +1,6 @@
 # viota — Online Multiplayer UX/Gameplay Backlog
 
-**Filed 2026-07-10** from a real 3-player online session (Vijay + 2 friends). These are viota
+**Filed 2026-07-10** from a real 3-player online session. These are viota
 online-multiplayer bugs, triaged against the code with root causes located.
 
 > **Does the VGames P1 push fix any of these?** **NO — none of them.** P1 is the accounts/identity
@@ -26,10 +26,10 @@ the nominal 60s patience. Constants: `PRESENCE_MS=45_000`, `DEFAULT_AI_TAKEOVER_
 - **Fix (S/M):** base the on-turn cover deadline off **when the seat became current-and-absent** (≈`now` at that moment), not off stale `last_seen_at`. The current use of `last_seen_at` was intentional for the "went dark mid-own-turn" case (docstring) — so track "turn-started-at" separately from "last-heard-from" and use the former for the on-turn window. Consider keeping a low-rate background heartbeat too.
 - **P1 push fixes it?** No (server presence logic; P1 didn't touch it).
 
-## P2 — Wrong/stale player names at the top ("Player 1 and Player 3", or "vijay, open and open")
+## P2 — Wrong/stale player names at the top ("Player 1 and Player 3", or "player_one, open and open")
 **Two bugs, same root: the active-game `ClientView` carries no player-name roster** (`do/view.ts:18-29` — only
 `WaitingRoomView` has `seats[].displayName`). Names online come from a one-time `sessionStorage` snapshot.
-- **(a) "vijay, open, open" (host):** `createOnlineRoom` seeds the roster as `[you, 'Open', 'Open', …]`
+- **(a) "player_one, open, open" (host):** `createOnlineRoom` seeds the roster as `[you, 'Open', 'Open', …]`
   (`net/lobby.ts:80-100`) and `WaitingRoom.tsx` polls the live named seats into React state but **never
   `saveSession`s** them, so the stale placeholder array rides into the game and renders for the whole match.
 - **(b) "Player 1 / Player 3" (resumed view):** `ResumeStrip.resumeOnline` fabricates `Player ${i+1}` for every

@@ -1,7 +1,7 @@
 # viota — Lobby + Waiting-Room Redesign (spec)
 
 **Date:** 2026-07-09
-**Author:** Claude (front-end redesign, with Vijay)
+**Author:** project team (front-end redesign, with the maintainer)
 **Scope:** Restyle the two "play with friends" chrome pages — **Lobby** (`/lobby` → `Lobby.tsx`)
 and **Waiting Room** (`/lobby/:code` → `WaitingRoom.tsx`) — to the **Neon-Night** design system
 established by the landing slice. This is **UI only**. The gameplay board is a separate later slice.
@@ -48,7 +48,7 @@ restyle the *controls* on top of it to match the hero + modal.
 
 ## 2. Lobby (`/lobby`) — two panels, friends-only
 
-**Remove the solo "Play vs AI" button entirely** (Vijay's call: vs-AI belongs in the landing's
+**Remove the solo "Play vs AI" button entirely** (the maintainer's call: vs-AI belongs in the landing's
 Play-vs-AI menu, not "play with friends"). Removing it also removes the `handleSolo` path and the
 `createOnlineGame` import — the lobby becomes purely **create / join a room**.
 
@@ -131,7 +131,7 @@ Layout (centered column; two panels can stack on narrow screens, sit side-by-sid
 ## 5. Out of scope (explicit)
 
 - **Online-vs-AI mode** (server-side vs client-AI+logging) + the modal's Local/Online toggle +
-  real online difficulty — **deferred to the next slice** (needs a worker decision; Vijay is
+  real online difficulty — **deferred to the next slice** (needs a worker decision; the maintainer is
   rethinking whether online-vs-AI should compute AI server-side at all). The landing **Play-vs-AI
   modal is UNTOUCHED** here (stays Local-only).
 - Gameplay board (`/game/*`), engine, worker, network protocol, `gameStore`, `Card.tsx`.
@@ -151,7 +151,7 @@ Layout (centered column; two panels can stack on narrow screens, sit side-by-sid
 - `pnpm --filter @viota/client test` green; `tsc --noEmit` clean; `… build` clean.
 - Reuse of `Button` + design tokens; no engine/worker/protocol/gameStore/Card touched.
 - Visual check at 320 / 375 / 768+ widths; focus rings visible on every control.
-- Deploy is **gated on Vijay** (client-only Pages deploy; no worker change this slice).
+- Deploy is **gated on the maintainer** (client-only Pages deploy; no worker change this slice).
 
 ## 8. Definition of done
 

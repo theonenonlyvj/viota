@@ -3,7 +3,7 @@
 **Date:** 2026-07-06
 **Supersedes:** v1 and v2 for transport/hosting/consistency. The v2 correctness must-fixes are all incorporated here.
 **Produced by:** a design council of 4 independent architects + per-design red-team evaluators + 2 cross-cutting specialists (mobile-reliability, consistency/free-infra) + a chief architect synthesis. Mandate: *the single most robust architecture that runs on free infrastructure — ignore this-week timeline, build the best.*
-**Status:** Design complete. **One platform decision flagged for Vijay (§0).**
+**Status:** Design complete. **One platform decision flagged for the maintainer (§0).**
 
 ## 0. The decision, up front
 

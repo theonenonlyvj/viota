@@ -114,7 +114,7 @@ test('shows the claim CTA in the populated state when no username is claimed', a
 })
 
 test('hides the claim CTA in both empty and populated states once a username is claimed', async () => {
-  mockUsername = 'vijay'
+  mockUsername = 'alex'
 
   ;(fetchMyStats as any).mockResolvedValue(null)
   const { unmount } = renderPage()

@@ -1197,13 +1197,13 @@ Run: `pnpm --filter @viota/client dev`, open the printed URL, and confirm agains
 VITE_SERVER_URL=https://viota-worker.theonenonlyvj.workers.dev pnpm --filter @viota/client build
 npx wrangler pages deploy packages/client/dist --project-name viota --branch=main --commit-dirty=true
 ```
-Then load https://viota.pages.dev and re-check the hero + footer live. (Do this only after Vijay signs off on merging the branch.)
+Then load https://viota.pages.dev and re-check the hero + footer live. (Do this only after the maintainer signs off on merging the branch.)
 
 - [ ] **Step 5: Final commit / branch is ready to merge**
 
 ```bash
 git status   # clean
-# open a PR from worktree-redesign-landing → main, or merge per Vijay's preference
+# open a PR from worktree-redesign-landing → main, or merge per the maintainer's preference
 ```
 
 ---

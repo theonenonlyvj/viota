@@ -146,7 +146,7 @@ P1 → P2 → P3 depend in order (state → moves → liveness). P4 depends on P
 
 ## Risks / open items
 
-- **Cloudflare go/no-go (Vijay).** Everything here assumes the platform decision in §0 of the spec. The Neon+Render fallback (spec §11) reuses P2's data model, P4 identity, P6 client, and P7 analytics; only the DO-specific liveness (P3) and storage (P1/P2 txn) change to the SELECT-FOR-UPDATE + advisory-lock + watchdog form.
+- **Cloudflare go/no-go (the maintainer).** Everything here assumes the platform decision in §0 of the spec. The Neon+Render fallback (spec §11) reuses P2's data model, P4 identity, P6 client, and P7 analytics; only the DO-specific liveness (P3) and storage (P1/P2 txn) change to the SELECT-FOR-UPDATE + advisory-lock + watchdog form.
 - Detailed per-phase TDD plans are authored JIT at each phase start (bite-sized steps + complete code) per superpowers:writing-plans, then executed via superpowers:subagent-driven-development.
 
 ---

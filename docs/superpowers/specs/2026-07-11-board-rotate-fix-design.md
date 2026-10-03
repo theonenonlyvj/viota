@@ -1,7 +1,7 @@
 # Board rotate fix — cards stay upright + rotation persists (Design Spec)
 
 **Date:** 2026-07-11 · **Scope:** viota client only (no engine, no worker, no protocol, no gameplay logic).
-**Approved by Vijay 2026-07-11.**
+**Approved by the maintainer 2026-07-11.**
 
 ## Problem (two bugs in the existing board-rotate)
 The board's ↺/↻ buttons rotate the whole cell grid with one CSS transform
@@ -15,7 +15,7 @@ The board's ↺/↻ buttons rotate the whole cell grid with one CSS transform
    on every move + sync — so the rotation constantly snaps back to 0. It also resets on reload.
 
 ## Design
-**Wanted behavior (Vijay-confirmed):** rotating re-orients the board *layout*, but each card stays **upright
+**Wanted behavior (the maintainer-confirmed):** rotating re-orients the board *layout*, but each card stays **upright
 and readable** at every angle; the chosen rotation **persists**. There is no "proper" card orientation — an
 Iota card is its color+shape+number regardless of visual turn — so cards are simply always shown upright.
 

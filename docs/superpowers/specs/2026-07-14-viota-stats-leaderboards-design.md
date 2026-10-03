@@ -1,6 +1,6 @@
 # viota — Stats + Leaderboards (on VGames), with login adoption (Design Spec)
 
-**Date:** 2026-07-14 · **Approved-in-principle by Vijay 2026-07-14 (this brainstorm).**
+**Date:** 2026-07-14 · **Approved-in-principle by the maintainer 2026-07-14 (this brainstorm).**
 **Scope:** viota client + its Cloudflare worker/D1 (= the VGames D1). **Rules engine (`packages/engine`) untouched.**
 No new database — everything lives in the shared VGames D1 built in P1.
 

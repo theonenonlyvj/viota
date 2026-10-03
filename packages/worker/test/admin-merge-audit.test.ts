@@ -20,7 +20,7 @@ const IDENTITY_DB = () => (env as unknown as { IDENTITY_DB: D1Database }).IDENTI
 async function adminTok(secret = ADMIN_SECRET, aud = 'vgames-admin', iss = 'vgames'): Promise<string> {
   return new SignJWT({})
     .setProtectedHeader({ alg: 'HS256' })
-    .setSubject('vijay')
+    .setSubject('alex')
     .setIssuer(iss)
     .setAudience(aud)
     .setIssuedAt()

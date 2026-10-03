@@ -292,8 +292,8 @@ git commit -m "feat(client): /lobby/:code gate — join card for non-members (sh
 
 - [ ] **Step 1:** `pnpm --filter @viota/client test` → all green (fix any regression without weakening).
 - [ ] **Step 2:** `pnpm --filter @viota/client exec tsc --noEmit` clean, then `VITE_SERVER_URL=https://viota-worker.theonenonlyvj.workers.dev pnpm --filter @viota/client build` clean.
-- [ ] **Step 3 (visual, real browser):** `pnpm --filter @viota/client dev`; open `/lobby/TESTCODE` in a fresh/incognito window (no session) → the Join card shows the code + name + Join + Back to Home, focus rings visible; a bad code shows an error. Opening a room you host still shows the waiting room. (Deploy only after Vijay signs off.)
-- [ ] **Step 4:** `git status` clean; hand back for the final review + Vijay's merge/deploy call.
+- [ ] **Step 3 (visual, real browser):** `pnpm --filter @viota/client dev`; open `/lobby/TESTCODE` in a fresh/incognito window (no session) → the Join card shows the code + name + Join + Back to Home, focus rings visible; a bad code shows an error. Opening a room you host still shows the waiting room. (Deploy only after the maintainer signs off.)
+- [ ] **Step 4:** `git status` clean; hand back for the final review + the maintainer's merge/deploy call.
 
 ## Notes for the executor
 - Never touch engine/worker/net protocol/gameStore/Card/WaitingRoom.

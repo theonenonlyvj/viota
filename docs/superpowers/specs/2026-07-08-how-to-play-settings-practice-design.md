@@ -29,7 +29,7 @@ These also satisfy two items on `ref/improvements.txt` ("a tutorial section", "w
 4. Keep pending/reconcile/cover/reclaim/veto affordances intact.
 5. **Rules never contradict the source of truth** — §3.
 
-**Standing guardrail — flag rules↔engine discrepancies.** Every rule statement in the content (§3) and every puzzle (§6) is cross-checked against engine behavior (`playValidator.ts`, `scorer.ts`, `lineValidator.ts`, `wildRecycle.ts`, `gameLoop.ts`); divergences are surfaced to Vijay, not silently reconciled. Already found:
+**Standing guardrail — flag rules↔engine discrepancies.** Every rule statement in the content (§3) and every puzzle (§6) is cross-checked against engine behavior (`playValidator.ts`, `scorer.ts`, `lineValidator.ts`, `wildRecycle.ts`, `gameLoop.ts`); divergences are surfaced to the maintainer, not silently reconciled. Already found:
 - **Stalemate (3 all-pass rounds)** and **ties/sudden-death** are **house-rule additions** (not in the rulebook). Labeled as such.
 - **Wild-starter reshuffle** — rulebook silent; engine deals a non-wild starter, matching the ruling. Documented as a clarification.
 - **Scoring wording** `[council]`: the "×2 for 4 cards" bonus fires on **playing exactly 4 cards**, *not* on "emptying your hand". The **game-ending ×2** (draw pile empty **and** you play your last card) is a *separate* rule. Content must not conflate them.
@@ -45,7 +45,7 @@ These also satisfy two items on `ref/improvements.txt` ("a tutorial section", "w
 
 ## 3. Shared foundation — one canonical rules-content module
 
-**`src/rules/content.tsx`** — the single player-facing rules source, transcribed faithfully from `ref/iota_rules.txt` + `viota_first_order_principles.rtf` + Vijay's rulings (pass = bottom-first player-chosen order; stalemate = 3 all-pass rounds [house rule]; ties → optional agreed sudden-death [house rule]; wild recycle flexible; wild-starter reshuffle [clarification]).
+**`src/rules/content.tsx`** — the single player-facing rules source, transcribed faithfully from `ref/iota_rules.txt` + `viota_first_order_principles.rtf` + the maintainer's rulings (pass = bottom-first player-chosen order; stalemate = 3 all-pass rounds [house rule]; ties → optional agreed sudden-death [house rule]; wild recycle flexible; wild-starter reshuffle [clarification]).
 
 - Exports structured sections `{ id, title, body, demo? }` plus a **condensed subset** flagged for the quick-reference. Both the full How-to-Play (§4) and the in-game quick-ref (§5) render from this one module, so the two surfaces can't drift from each other.
 - Uses the `Card` component for real card graphics in examples.
@@ -244,5 +244,5 @@ type StaticBoardProps = {
 - **How to Play:** hybrid (illustrated + demos), ephemeral overlay, ESC/backdrop close via shared wrapper.
 - **Settings gear:** rules quick-ref + full-how-to-play + Quit-to-menu (both modes) + (local) New game. **No** sound toggle, **no** auto-highlight toggle (redesign), **no** resign (next scope). Online quit = pause.
 - **Practice:** curated set; **top-score** (complete solver + independent oracle) and **concept** (predicate-graded) + **forced-pass**; dedicated `StaticBoard` (fork A) with scale-to-fit; recycle/judgment-pass puzzles are phase 2.
-- **Rules content:** one canonical module; corrected scoring wording (4-card vs game-ending; compounding lots); prose→engine pinned by the Turn 1–4 fixture; discrepancies flagged to Vijay.
+- **Rules content:** one canonical module; corrected scoring wording (4-card vs game-ending; compounding lots); prose→engine pinned by the Turn 1–4 fixture; discrepancies flagged to the maintainer.
 - **Merge-safety:** new files + 5 surgical shared edits; `Board`/`Cell`/`gameStore` untouched; `_redirects` for SPA deep-links.

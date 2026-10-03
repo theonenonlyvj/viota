@@ -86,11 +86,11 @@ test('shows the server-authoritative roster, overriding a stale "Open/Open" sess
   render(<MemoryRouter><OnlineGame /></MemoryRouter>)
   act(() => useGameStore.getState().applyOnlineView(view({
     players: [
-      { seat: 0, displayName: 'Vijay', ownerType: 'human' },
+      { seat: 0, displayName: 'Alex', ownerType: 'human' },
       { seat: 1, displayName: 'Sam', ownerType: 'human' },
     ],
   }), 1))
-  expect(screen.getByText('Vijay')).toBeInTheDocument()
+  expect(screen.getByText('Alex')).toBeInTheDocument()
   expect(screen.getByText('Sam')).toBeInTheDocument()
   expect(screen.queryByText('Open')).not.toBeInTheDocument()
 })

@@ -55,7 +55,7 @@ test('game-over shows the claim CTA when no username is claimed', () => {
 })
 
 test('game-over hides the claim CTA once a username is claimed', () => {
-  localStorage.setItem('viota_username', 'vijay')
+  localStorage.setItem('viota_username', 'alex')
   render(<MemoryRouter><Game /></MemoryRouter>)
   act(() => useGameStore.setState({ phase: 'game-over' }))
   expect(screen.queryByRole('button', { name: /save this win/i })).toBeNull()

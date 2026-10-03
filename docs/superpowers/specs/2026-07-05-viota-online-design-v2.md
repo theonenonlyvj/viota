@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-05
 **Supersedes:** `2026-07-05-viota-online-design.md` (v1). Read v1 for the goal/identity narrative; this v2 is the authoritative design after the expert council review.
-**Status:** Approved architecture + council must-fixes folded in. One open decision flagged for Vijay (§2).
+**Status:** Approved architecture + council must-fixes folded in. One open decision flagged for the maintainer (§2).
 
 ## 1. What the council changed (why v2 exists)
 
@@ -10,7 +10,7 @@ The council confirmed the architecture is **sound and correctly aimed at the #1 
 - **Socket.IO "message buffering" does not recover missed server→client broadcasts** and its one recovery feature (`connectionStateRecovery`) is disabled after any restart. The real recovery primitive is the **authoritative snapshot the server already sends on (re)connect**. → **Keep `ws` for now**; add an explicit resume protocol. Socket.IO becomes a defensible later refactor, not a requirement.
 - **"Postgres backstop makes restarts safe" saves state but NOT the in-memory liveness** (grace timers, votes, AI-drive loops). → add **boot rehydration + a watchdog**.
 
-## 2. OPEN DECISION FOR VIJAY — scope
+## 2. OPEN PRODUCT DECISION — scope
 
 The council's unanimous verdict: **"full feature this week" is not realistic**, and any half-finished piece on game night is worse than the current code. Recommended: **ship the minimum robust subset on the existing `ws` + Neon stack**, defer Socket.IO / real passwords / analytics dashboards / full vote UI to a fast-follow.
 

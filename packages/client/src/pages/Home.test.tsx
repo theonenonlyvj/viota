@@ -75,10 +75,10 @@ test('the account entry shows the guest display name + a claim nudge when unclai
 })
 
 test('the account entry shows the claimed username with no nudge once claimed', () => {
-  mockUsername = 'vijay'
+  mockUsername = 'alex'
   renderHome()
   const btn = screen.getByRole('button', { name: /^account/i })
-  expect(btn).toHaveTextContent('vijay')
+  expect(btn).toHaveTextContent('alex')
   expect(screen.queryByText(/create account to save/i)).toBeNull()
 })
 
